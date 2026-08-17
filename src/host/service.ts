@@ -3,7 +3,7 @@
  * branch creation. Markers are stored in a small JSON file so the browser
  * only ever receives titles, never trashed session content.
  */
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { TypertRemoteService, Remote } from '@deepseek-ai/dsh-typert-protocol'
@@ -76,9 +76,30 @@ export class BetterWebService extends TypertRemoteService {
    */
   @Remote('destroy')
   async destroy(sessionId: SessionId): Promise<void> {
-    // TODO(storage-seam): dispose the live in-memory session via its owning
-    // fiber / `session/disposed`, and remove durable files through the
-    // configured `sessionPersistence` / workspace registry removal API.
+    const ctx = this.ctx as unknown as Context
+    const sessions = ctx.get('sessions')
+    const live = sessions?.get(sessionId)
+
+    // Best-effort hard delete through the persistence backend's per-session
+    // artifact location. JSONL backends support this; SQLite has no per-session
+    // file, so the harness storage seam still needs a backend-specific delete.
+    const persistence = ctx.get('sessionPersistence')
+    if (persistence !== undefined && live === undefined) {
+      try {
+        const inspection = await persistence.inspect(sessionId)
+        const location = persistence.locate(inspection.meta)
+        if (location !== undefined && existsSync(location.path)) {
+          rmSync(location.path, { recursive: true, force: true })
+        }
+      } catch (error) {
+        // The session may already be gone; hard delete should still clear UI meta.
+      }
+    }
+
+    // TODO(store-eviction): if `live` is present, detach it via its owning
+    // fiber so the in-memory SessionStore drops it immediately. There is no
+    // public `sessions.remove()` in the current harness API.
+
     const file = this.load()
     file.trash = file.trash.filter(r => r.sessionId !== sessionId)
     file.branches = file.branches.filter(r => r.sessionId !== sessionId)

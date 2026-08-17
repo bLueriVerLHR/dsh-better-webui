@@ -3,7 +3,7 @@
  * and open-in-new-tab actions. The exact tool-row slot wiring is added in M3;
  * this module exports the pure truncation helper and the presentational card.
  */
-import { useMemo } from 'react'
+import { useMemo, type ReactElement } from 'react'
 
 export interface TruncatedLines {
   head: string
@@ -38,7 +38,7 @@ export interface ToolOutputProps {
  * shows the complete output (the omitted marker is only used for display
  * size control when opening in-page; copy/new-tab uses the full text).
  */
-export function ToolOutput({ text, headLines = 50, tailLines = 50, label = 'Output' }: ToolOutputProps): React.JSX.Element {
+export function ToolOutput({ text, headLines = 50, tailLines = 50, label = 'Output' }: ToolOutputProps): ReactElement {
   const truncation = useMemo(() => truncateHeadTail(text, headLines, tailLines), [text, headLines, tailLines])
   const showFull = truncation.omitted === 0 ? text : text
 

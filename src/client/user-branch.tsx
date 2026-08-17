@@ -15,7 +15,7 @@ function textOf(content: readonly { type: string; text?: string }[]): string {
 }
 
 export function UserBranchNodeView({
-  node, forkAt,
+  node, forkAt, t,
 }: ChatNodeViewProps<'user'>): ReactElement {
   const text = textOf(node.data.content)
   return (
@@ -26,7 +26,7 @@ export function UserBranchNodeView({
         className="better-webui-branch"
         onClick={() => { forkAt(node.data.seq) }}
       >
-        从这里分支
+        {t('branch.fromHere')}
       </button>
     </div>
   )

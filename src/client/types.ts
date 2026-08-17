@@ -1,10 +1,14 @@
 /**
- * Client-side remote type augmentation for the better-webui namespace.
+ * Client-side type augmentation for better-webui.
+ * - remote namespace types
+ * - locale namespace type
  */
 import type {
   RemoteResult, TypertRemoteNamespace,
 } from '@deepseek-ai/dsh-typert-protocol'
+import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type { BetterWebMetadata } from '../shared/types.ts'
+import type { BetterSessionsKey } from './locales.ts'
 
 declare module '@deepseek-ai/dsh-typert-protocol' {
   interface TypertRemoteMap {
@@ -21,5 +25,11 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
 
   interface TypertRemoteNamespaceMap {
     betterWebui: TypertRemoteNamespace<'betterWebui'>
+  }
+}
+
+declare module '@deepseek-ai/dsh-client-locale/client' {
+  interface LocaleNamespaceMap {
+    'better-sessions': BetterSessionsKey
   }
 }

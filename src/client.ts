@@ -14,6 +14,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-slots'
 import { betterWebuiRemote } from './host/remote.ts'
 import { BetterSidebar } from './client/sidebar.tsx'
 import { BashBetterRow } from './client/bash-row.tsx'
+import { UserBranchNodeView } from './client/user-branch.tsx'
 import type { BetterWebMetadata } from './shared/types.ts'
 import './client/types.ts'
 
@@ -67,6 +68,18 @@ export function apply(ctx: ClientContext): void {
   }
 
   ctx.effect(() => ctx.locale.register('better-sessions', { zh, en }), 'better-webui: dictionaries')
+
+  // M4: add "branch from here" to user messages.
+  ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
+    name: 'conversation.chat.node',
+    key: 'user',
+    priority: -1,
+  }, UserBranchNodeView as never))
+  ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
+    name: 'conversation.chat.node',
+    key: 'steering',
+    priority: -1,
+  }, UserBranchNodeView as never))
 
   // M3: override the bash tool row with a collapsible output view.
   ctx.slots.inject('tool.call.toolview', () => ctx.slots.register({

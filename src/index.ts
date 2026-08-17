@@ -1,25 +1,16 @@
 /**
- * better-webui host half. Loaded by the `better-webui-host` cordis row.
+ * better-webui host entry. Loaded by the `better-webui-host` cordis row.
  *
- * Provides a Typert Remote namespace `better-sessions` with:
- * - `trash(sessionId)`   : first delete → mark trashed (host-side, durable)
- * - `restore(sessionId)` : clear the trashed marker
- * - `destroy(sessionId)` : second delete → actually remove session content
- * - `branch(sessionId, atSeq)` : fork a new session from a stable prefix
- *
- * Markers live in a small JSON file under the configured metadata root, so the
- * client only ever sees a session's title after trash (no content leak).
+ * Provides the durable `betterWebui` service and exposes it to the browser
+ * through the generated Typert remote artifact (or the hand-written
+ * `src/host/remote.ts` contribution in non-generated builds).
  */
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { TypertRemoteService, Remote } from '@deepseek-ai/dsh-typert-protocol'
-import type { SessionId } from '@deepseek-ai/dsh-session'
-import type {} from '@deepseek-ai/dsh-session'
+import { BetterWebService, type BetterWebServiceOptions } from './host/service.ts'
+import { betterWebuiRemote } from './host/remote.ts'
 
-export interface BetterWebPluginConfig {
-  /** Root for trash/branch metadata. */
+export interface Config {
   metadataRoot?: string
 }
 
@@ -27,117 +18,27 @@ export const Config = z.object({
   metadataRoot: z.string().optional(),
 })
 
-export interface TrashRecord {
-  sessionId: SessionId
-  trashedAt: number
-}
-
-export interface BranchRecord {
-  sessionId: SessionId
-  parentSessionId: SessionId
-  branchAtSeq: number
-}
-
-interface MetadataFile {
-  trash: TrashRecord[]
-  branches: BranchRecord[]
-}
-
-export class BetterWebUiService extends TypertRemoteService {
-  static inject = ['sessions']
-
-  static Config = Config
-
-  private readonly metaPath: string
-
-  constructor(ctx: Context, config: BetterWebPluginConfig = {}) {
-    super(ctx, 'betterWebui')
-    const root = config.metadataRoot ?? '.'
-    this.metaPath = join(root, 'better-webui', 'metadata.json')
-    mkdirSync(join(root, 'better-webui'), { recursive: true })
-  }
-
-  private load(): MetadataFile {
-    if (!existsSync(this.metaPath)) return { trash: [], branches: [] }
-    try {
-      return JSON.parse(readFileSync(this.metaPath, 'utf8')) as MetadataFile
-    } catch {
-      return { trash: [], branches: [] }
-    }
-  }
-
-  private save(file: MetadataFile): void {
-    const tmp = `${this.metaPath}.tmp`
-    writeFileSync(tmp, JSON.stringify(file, null, 2))
-    renameSync(tmp, this.metaPath)
-  }
-
-  /** First-step delete: mark trashed. */
-  @Remote('trash')
-  trash(sessionId: SessionId): void {
-    const file = this.load()
-    if (file.trash.some(r => r.sessionId === sessionId)) return
-    file.trash.push({ sessionId, trashedAt: Date.now() })
-    this.save(file)
-  }
-
-  /** Undo trash. */
-  @Remote('restore')
-  restore(sessionId: SessionId): void {
-    const file = this.load()
-    const next = file.trash.filter(r => r.sessionId !== sessionId)
-    if (next.length === file.trash.length) return
-    file.trash = next
-    this.save(file)
-  }
-
-  /**
-   * Second delete: hard-remove session content.
-   * TODO(implementation): wire the exact `sessionPersistence`/workspace
-   * removal call for the harness version this plugin is built against.
-   * TODO(implementation): dispose the live in-memory session via its owning
-   * fiber / `session/disposed`.
-   */
-  @Remote('destroy')
-  async destroy(sessionId: SessionId): Promise<void> {
-    // TODO(implementation): remove live in-memory session.
-    // TODO(implementation): remove durable session files/storage rows.
-    const file = this.load()
-    file.trash = file.trash.filter(r => r.sessionId !== sessionId)
-    file.branches = file.branches.filter(r => r.sessionId !== sessionId)
-    this.save(file)
-  }
-
-  /**
-   * Branch from a user message: fork the source through `atSeq` (inclusive).
-   * `ctx.sessions.fork()` already records `parentSession` in the child header,
-   * so the durable `BranchRecord` here only feeds the sidebar tree metadata.
-   */
-  @Remote('branch')
-  branch(sourceId: SessionId, atSeq: number, childSessionId?: SessionId): SessionId {
-    const ctx = this.ctx as unknown as Context
-    const sessions = ctx.get('sessions')
-    if (sessions === undefined) throw new Error('better-webui: sessions service unavailable')
-    const child = sessions.fork(sourceId, atSeq, childSessionId)
-    const file = this.load()
-    file.branches.push({ sessionId: child.id, parentSessionId: sourceId, branchAtSeq: atSeq })
-    this.save(file)
-    return child.id
-  }
-
-  /** Return trash + branch metadata for the client-side projection. */
-  @Remote('meta')
-  meta(): MetadataFile {
-    return this.load()
-  }
-}
+export { BetterWebService } from './host/service.ts'
+export { betterWebuiRemote } from './host/remote.ts'
+export type {
+  BetterWebMetadata, BranchRecord, TrashRecord,
+} from './shared/types.ts'
 
 /**
- * Host service apply. Registers `betterWebui` on the context.
- * Remote mounting is generated by the typert pipeline at build time
- * (see the package's `/remote` + `/typert` artifacts) — the cordis row only
- * needs to provide the service; the api-remotes assembly mounts the namespace.
+ * Host plugin apply.
+ * @param ctx - Cordis context.
+ * @param config - validated plugin config.
  */
-export function apply(ctx: Context, config?: BetterWebPluginConfig): void {
-  ctx.provide('betterWebui', new BetterWebUiService(ctx, config))
+export function apply(ctx: Context, config: Config = {}): void {
+  ctx.provide('betterWebui', new BetterWebService(ctx, config))
+
+  // In generated harness builds the api-remotes assembly mounts the package's
+  // `/remote` artifact automatically. For source/manual use we still register
+  // the contribution if a remote gateway is already present.
+  const remote = ctx.get('remote')
+  if (remote !== undefined) {
+    void remote.$mount(betterWebuiRemote).then(() => {
+      /* mounted */
+    })
+  }
 }

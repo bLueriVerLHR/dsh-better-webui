@@ -13,6 +13,7 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
 import { betterWebuiRemote } from './host/remote.ts'
 import { BetterSidebar } from './client/sidebar.tsx'
+import { BashBetterRow } from './client/bash-row.tsx'
 import type { BetterWebMetadata } from './shared/types.ts'
 import './client/types.ts'
 
@@ -66,6 +67,14 @@ export function apply(ctx: ClientContext): void {
   }
 
   ctx.effect(() => ctx.locale.register('better-sessions', { zh, en }), 'better-webui: dictionaries')
+
+  // M3: override the bash tool row with a collapsible output view.
+  ctx.slots.inject('tool.call.toolview', () => ctx.slots.register({
+    name: 'tool.call.toolview',
+    key: 'bash',
+    priority: -1,
+  }, BashBetterRow as never))
+
   ctx.slots.inject('sidebar.workspaces', () => ctx.slots.register({
     name: 'sidebar.workspaces',
     priority: -1,

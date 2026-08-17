@@ -92,3 +92,11 @@ better-webui/
 - 分支树默认折叠；展开状态仅存浏览器本地偏好。
 - 输出截断默认保留头 50 行 + 尾 50 行，中间省略（省略行数以占位行显示），头/尾行数可配置。
   - 为什么截断：超大 bash 输出 / 文件 dump 直接渲染进 DOM 会导致页面卡顿、内存暴涨、布局过慢。截断只影响默认展示；展开时仍以“复制完整输出 / 新标签页打开完整输出”提供无截断查看路径。
+
+## 实现状态（ongoing）
+- M1 ✅ 仓库骨架 + cordis.patch.yml + host/client 入口 + package.json
+- M2 🚧 宿主 trash/restore/destroy/branch 服务与 metadata 持久化已写；
+  - destroy 的真实文件删除依赖 harness storage seam，当前用 `sessionPersistence.locate()` + `fs.rm` 做文件后端的 best-effort，SQLite 后端需补 storage seam。
+- M3 🚧 `ToolOutput` 头尾截断 + bash toolview 覆盖已注册；仍需在真实 web app 中验证。
+- M4 🚧 用户消息“从这里分支”按钮通过 `forkAt(seq)` 接入；侧栏树（默认折叠、持久化元数据）已实现。
+- 下一步：在 harness checkout 中 `pnpm install && pnpm build` 按类型错误修订；再 `pnpm run dev:web` 人工验证。

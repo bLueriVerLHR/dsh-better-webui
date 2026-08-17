@@ -1,0 +1,17 @@
+# better-webui bundle patch: adds the host RPC/persistence plugin and the
+# browser plugin that overrides sidebar + tool rendering.
+#
+# This layer is applied AFTER the dsh-base / dsh-web-app bundles, so its
+# `- id:` rows override same-id rows from lower layers, and its `insert:` rows
+# add new plugin entries to the web profile.
+
+- insert:
+    # Host half: session trash/restore/destroy + branch persistence service.
+    - id: better-webui-host
+      name: '@better-webui/better-webui'
+
+    # Browser half: UI overrides (sidebar tree, tool output <details>, branch
+    # entry points). `dsh.client` metadata on the package tells the modules
+    # scanner to load ./client in the browser.
+    - id: better-webui-client
+      name: '@better-webui/better-webui/client'

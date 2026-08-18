@@ -1,0 +1,3 @@
+# Local DSH test home (sessions, storages, healed profile node_modules)
+.dsh-home/
+node_modules/

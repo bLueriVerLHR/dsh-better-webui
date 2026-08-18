@@ -1,7 +1,3 @@
-window.__ModuleLoader__.load({ id: '@better-webui/better-webui', factory: (require) => {
-var module = { exports: {} };
-var exports = module.exports;
-Object.defineProperty(exports, Symbol.toStringTag, { value: 'Module' });
 /**
  * better-webui browser half source. build.mjs wraps this file into the
  * `window.__ModuleLoader__.load` factory envelope emitted as lib/client.js.
@@ -883,6 +879,3 @@ exports.apply = function apply(ctx) {
     }, RetractPromptAction)
   })
 }
-
-return module.exports;
-} });

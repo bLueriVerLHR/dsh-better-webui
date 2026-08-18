@@ -1,20 +1,13 @@
 {
   "name": "@better-webui/better-webui",
-  "description": "Web GUI 体验增强插件：两步删除、可展开工具输出、分支会话树",
-  "version": "0.1.0",
+  "description": "Web GUI enhancement plugin: two-step session delete with archive coupling, prompt retract (fork bridge), and archive-set management",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
   "main": "lib/index.js",
-  "types": "lib/types/index.d.ts",
   "exports": {
-    ".": {
-      "types": "./lib/types/index.d.ts",
-      "default": "./lib/index.js"
-    },
-    "./client": {
-      "types": "./lib/types/client.d.ts",
-      "default": "./lib/client.js"
-    },
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./src/*": "./src/*",
     "./package.json": "./package.json"
@@ -24,8 +17,7 @@
     "cordis.patch.yml"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "watch": "tsc -p tsconfig.json --watch"
+    "build": "node build.mjs"
   },
   "dsh": {
     "bundle": {
@@ -41,24 +33,9 @@
     }
   },
   "license": "MIT",
-  "peerDependencies": {
-    "@deepseek-ai/cordis": "*",
-    "@deepseek-ai/dsh-api-remotes": "workspace:^",
-    "@deepseek-ai/dsh-client-runtime": "workspace:^",
-    "@deepseek-ai/dsh-client-locale": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-slots": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-sidebar": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-workspace": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-tool": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-conversation": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^",
-    "@deepseek-ai/dsh-typert-protocol": "workspace:^"
-  },
   "devDependencies": {
-    "typescript": "^5.0.0"
-  },
-  "dependencies": {
-    "@deepseek-ai/schemastery": "workspace:^",
-    "zod": "^4.4.3"
+    "jsdom": "^30.0.1",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
   }
 }

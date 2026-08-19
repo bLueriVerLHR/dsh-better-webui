@@ -1,6 +1,6 @@
-# better-webui 开发记录（v0.4）
+# better-webui 开发记录（v0.5）
 
-这份记录面向两件事：**恢复现场**（服务器、profile、热加载链路）与**未来插件编写**（哪些机制可用、契约长什么样、坑在哪）。文中所有结论均已在 2026-08-17/18 的实机上验证或从 harness 源码直接读出。
+这份记录面向两件事：**恢复现场**（服务器、profile、热加载链路）与**未来插件编写**（哪些机制可用、契约长什么样、坑在哪）。文中所有结论均已在 2026-08-17/18 的实机上验证或从 harness 源码直接读出（v0.5 针对 dsh 0.1.0-rc.7 复核）。
 
 ---
 
@@ -315,71 +315,67 @@ pnpm run build        # = node build.mjs：包裹 client + 复制 host，零工�
 
 ## 10. 未来方向（未做）
 
-- 回收站 UI 的"清空全部"。
-- 归档查看器加"取消归档"（需等 harness 提供 unarchive RPC；现在只有 archiveSession）。
-- trash 记录带 workspace 归属，恢复后回原分组（现在靠 cwd 重挂）。
-- 会话正在运行时 trash 的更优雅处理（目前 cancel + 3s 兜底）。
-- 若 harness 未来提供 `sessions.delete` RPC，host half 可整体简化。
+- 归档弹层的"全部恢复"批量操作。
+- 若 harness 未来提供 unarchive / sessions.delete RPC，host half 可去掉对注册表私有成员的依赖、整体简化。
 - i18n：目前 zh/en，缺其它 locale 时 fallback 到 en。
 
 ---
 
-## 11. v0.4 机制记录（撤回 + 归档联动 + 死记录清除）
+## 11. v0.5 机制记录（归档会话管理）
 
-### 11.1 `conversation.chat.user-actions` 槽（harness 补丁）
+### 11.1 范围演变：v0.4 → v0.5
 
-用户消息行原无插件槽：`UserMessageNodeView` 渲染 `MessageIconActions` 时不传
-`extraActions`（只有 assistant 回合尾接 `conversation.chat.assistant-actions`）。
-v0.4 在 harness 侧新增 list 槽 `conversation.chat.user-actions`，owner props
-`{ node: UserMessageNode, turn?: number }`：
+v0.4 曾实现"标题栏垃圾桶 + 回收站 + 撤回重写（fork 桥接）"。用户裁决后收缩：
 
-- **源码补丁**（`packages/client/ui-conversation`，随下次 dsh 发布带走）：
-  `contract/slots.ts`（SlotMap + `UserActionOwnerProps`）、`chat/MessageItem.tsx`
-  （新增 `UserPromptNodeView`，steering 行保持原组件——children 声明是排他的，
-  只挂 `'user'` key 正好把撤回限定在真正的提示词行）、`chat/register-node-renderers.ts`。
-- **部署镜像补丁**（当下生效）：全局安装的
-  `dsh-client-ui-conversation/lib/client.js` 是**未压缩 esbuild 产物**，可外科手术式
-  修改。`scripts/patch-ui-conversation.mjs` 幂等（含 marker 检测 + 唯一性校验 +
-  备份），**每次升级 dsh 后重跑**。webserver 直接 serve 该文件，改完刷新即生效。
-- 插件侧注册照旧 `ctx.slots.inject(name, () => ctx.slots.register({...}, Comp))`；
-  组件经四股 props 拿 `node`/`turn`/`useSession`/`sessionId`/`inputActions`
-  （`inputActions` 来自 ui-conversation 的 `sessions.provide` 标准件，session 槽位全可达）。
+- **不再修改 dsh 本体**。撤回按钮依赖给 `dsh-client-ui-conversation` 打的
+  `conversation.chat.user-actions` 槽位补丁，dsh 升级（0.1.0-rc.7）即被覆盖 ——
+  该功能与补丁脚本整体移除。若将来官方提供用户消息行插槽，可按
+  docs/design.md §5.1 的 fork 边界数学复活。
+- **删除收敛进归档视图**。v0.4 的 trash = 归档 + 搬目录，被删会话同时出现在
+  回收站与归档区、两边都能删，体验冗余。v0.5 只保留一枚归档图标：
+  查看 / 恢复 / 二次确认彻底删除。删除未归档会话走原生「归档会话」菜单再删。
 
-### 11.2 撤回的 fork 边界数学
+### 11.2 删除的完整性（"真的都删了"的构成）
 
-`sessions.fork({atSeq})` 的边界 = **atSeq 起第一个 `turn/end`**（消息 fork 按钮传
-消息 seq 即含该消息整回合）。撤回 M 要"保留 M 之前的对话"，因此
-`atSeq = max(turnEnds[t] for t < M.turn)`——快照里 `snapshot.turnEnds` 是
-`Map<turn, turn/end seq>`。无更早回合（首条）→ 撤回不可用，按钮禁用。流程：
-cancel（若 running）→ fork → `setDraft(原文)` → open(子) → host `archive`(源)。
+彻底删除一个会话要清五处，v0.5 的 `destroy` 全部覆盖（tests/host.mjs 逐项断言）：
 
-### 11.3 归档集的运行时增删（无 unarchive RPC 的出路）
+| 残留物 | 位置 | 清理方式 |
+|---|---|---|
+| 会话目录 | `$DSH_HOME/sessions/<proj>/session-<id>/` | `rm -rf`（活会话先 cancel + flush） |
+| 回收站副本 | `$DSH_HOME/better-webui/trash/<id>/`（遗留） | `rm -rf` |
+| trash 记录 | `better-webui/trash/trash.json` | 重写索引 |
+| 归档集条目 | `storages/workspace.json` → `global.archivedSessionIds` | 注册表操作队列内 `setState`（见 11.3） |
+| 记账槽条目 | 同文件 → `tables.workspaces.*.sessionIds` | 注册表**公开 API** `entity.detachSession(id)` |
 
-`WorkspaceRegistry`（dsh-workspace）TS-private 成员编译后是普通方法：
-`enqueueOperation(op)`（串行队列，与 archiveSession 同队列）+ `requireState()` +
-`setState(state)`（`DomainGlobal.set` → 持久化 + `domain/changed` 事件）。
-apiproxy 的存储监视器（api-proxy.ts ~3570）对比新旧 `archivedSessionIds` 后自动推
-`host/archived-sessions-changed` 帧，**所有客户端的侧栏/归档集实时更新，零额外通知**。
-原地改 `requireState()` 返回的对象是安全的（`globalValue` 是普通对象，无冻结）。
-host half 的 `mutateArchiveSet` 带能力检测，未来 dsh 重构掉这些成员时降级为
-日志警告而非报错。用途：restore 反归档（会话回侧栏）、`restoreArchived`、
-`destroy`/`purgeArchived` 清死 id。
+归档集/记账的每次提交都会发 domain change，apiproxy 存储监视器自动推
+`host/archived-sessions-changed` / `host/workspace-changed` 帧，全端实时更新。
 
-### 11.4 trash 归档联动顺序
+### 11.3 仍需内部路径的部分（rc.7 核实）
 
-先 `archiveSession`（目录还在，存在性检查通过）再搬目录；索引记录 `archived`
-标记。restore/destroy 时按标记反归档。归档失败的容错：照常搬目录 + 警告日志。
+rc.7 依然没有公开 unarchive（dsh-workspace README 明示 archived sessions
+"have no viewing or unarchive surface"；`workspace.unarchiveSession` 不存在）。
+归档集增删继续走注册表串行队列：`enqueueOperation(op)` + `requireState()` +
+`setState(state)`（TS-private，编译后是普通方法）。带能力检测，未来 dsh 重构掉
+这些成员时降级为日志警告。记账清理只用公开的 `detachSession`；死记账 id 的
+**发现**读 `storages/workspace.json`（实体投影会把死 id 过滤掉，文件是唯一来源），
+只读不改。
 
-### 11.5 已核实不可行 / 已修
+### 11.4 启动自愈清扫
 
-- **归档行 `sessions.open` 回看**：原生投影规则会立即清掉归档会话的打开状态
-  （§2 表），路线放弃——这正是 v0.3"点开变空白会话"的根因，不是网络问题。
-- **归档行标题"无标题"**：改用 `summary.displayTitle`（durable title → 项目目录名 → id）。
-- **purgeArchived 的判定**：`live sessions ∪ persistence.list()` 都没有的归档 id 即死。
-  注意 purge 只清注册表归档集，不动磁盘（死 id 本就无目录）。
+`apply()` 注册完通道后跑一次 `purge`：把"既不活、不在持久层、也无 trash 记录"的
+归档 id 与记账 id 全部清掉（best-effort，失败仅日志）。历史遗留的死记账 id
+（v0.4 destroy 及手工清理残留）就是被它清的。
 
-### 11.6 测试覆盖（tests/smoke.mjs，36 项）
+### 11.5 行模型（client）
 
-撤回：按钮渲染、两步确认、`fork` atSeq=41（上一回合 end）、setDraft 原文、
-open 子会话、archive 源、toast；首条禁用。归档：displayTitle、restoreArchived、
-trash、死行置灰标注、清除入口两步确认 + purgeArchived RPC。原有 trash/undo 全保留。
+归档弹层的行 = `archivedSessionIds ∪ trash.json 记录 id`，按 id 分三态：
+`byId` 有 → 活归档行（displayTitle）；无 `byId` 但有记录 → 遗留搬运行（可恢复/删除）；
+两者皆无 → 死行（置灰 + 「清除失效记录」入口出现在 hint 区）。归档集通过帧实时
+更新，trash 记录在弹层打开时拉取。
+
+### 11.6 测试（tests/smoke.mjs 22 项 + tests/host.mjs 20 项）
+
+- smoke：单一注册、无标题栏垃圾桶/回收站、三态行、restore/destroy/purge 的
+  两步确认与 RPC、toast、空态。
+- host：真实临时 DSH_HOME + 模拟注册表（含 setState 持久化回文件的保真），
+  断言启动清扫、destroy 五处清理、restore 两条路径、workspace.json 终态零残留。

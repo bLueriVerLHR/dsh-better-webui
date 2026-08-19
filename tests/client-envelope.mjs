@@ -69,8 +69,8 @@ const ctx = {
   effect: (dispose) => dispose,
 }
 exports.apply(ctx)
-check(registrations.includes('conversation.session.header.actions'), 'apply registers the header actions slot')
-check(registrations.includes('sidebar.footer.action'), 'apply registers the sidebar footer slot')
+check(registrations.length === 1 && registrations.includes('sidebar.footer.action'),
+  `apply registers exactly the sidebar footer slot (got: ${registrations.join(', ') || 'none'})`)
 
 if (failures.length > 0) {
   console.error('FAIL:', failures.join('; '))

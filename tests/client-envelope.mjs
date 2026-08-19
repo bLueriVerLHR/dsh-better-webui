@@ -69,8 +69,8 @@ const ctx = {
   effect: (dispose) => dispose,
 }
 exports.apply(ctx)
-check(registrations.length === 1 && registrations.includes('sidebar.footer.action'),
-  `apply registers exactly the sidebar footer slot (got: ${registrations.join(', ') || 'none'})`)
+check(registrations.length === 1 && registrations.includes('settings.section'),
+  `apply registers exactly the settings section slot (got: ${registrations.join(', ') || 'none'})`)
 
 if (failures.length > 0) {
   console.error('FAIL:', failures.join('; '))

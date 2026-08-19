@@ -1,4 +1,4 @@
-# better-webui 设计讨论与决策记录（v0.5 现行）
+# better-webui 设计讨论与决策记录（v0.8 现行）
 
 > 记录三个未完成功能的**机制调查 → 逐条讨论 → 决策结果**。
 > 本文件保留讨论过程作为依据；现行范围见 §1.1。
@@ -8,17 +8,32 @@
 
 ## 1. 范围与现状
 
-### 1.1 v0.5 现行范围（用户裁决，dsh 0.1.0-rc.7）
+### 1.1 v0.8 现行范围（用户裁决，dsh 0.1.0-rc.7）
 
-用户更新 dsh 后裁定：**不修改 dsh 本体**（升级即覆盖）；删除与归档收敛为单一
-归档管理弹层。现行功能只有一项：
+v0.8 把归档入口从侧栏图标迁进设置：**设置面板左侧导航里的「归档会话」页**
+（紧跟「Agent 预设」页下方）。页面直接列出全部归档会话，不再需要弹层/计数：
 
-- 侧栏底部一枚归档图标：**查看**归档会话、**恢复**（回侧栏）、
-  **彻底删除**（两步确认；目录/回收站残留/trash 记录/归档集/记账槽五处全清）、
-  死行置灰 + 「清除失效记录」，宿主启动自动清扫死引用。
+- **设置侧栏独立页**（`settings.section`，order 30，label「归档会话」）：**查看**
+  归档会话、**恢复**（回侧栏）、**彻底删除**（两步确认；目录/归档集/记账槽
+  三处全清）、死行置灰 + 「清除失效记录」，宿主启动自动清扫死引用。
+- **不显示数量计数**（与其他设置页一致）；简介为一句平实文案，风格对齐「模型」页
+  intro（如「管理被原生界面归档隐藏的会话，可恢复到侧栏或彻底删除。」）。
+- **自定义模型推理等级**：宿主幂等为 `llm-pi-ai` 下未声明推理能力的自定义
+  模型补 `reasoningEfforts: { off: null, low, medium, high }`，使原生
+  composer「推理等级」菜单对自定义模型生效（机制与裁决见 §9）。
+
+**位置动因（用户裁决）**：侧栏 `sidebar.footer.action` 与 ui-cordis 的动态插件
+面板（CordisPanel）同槽，运行 probe 等动态插件时该面板会占据同位置、把归档图标
+挤掉。改为设置页后从根上避开该冲突；原侧栏图标删除。
+
+**明确不做**（用户裁决）：工具输出在对话视图的呈现差异保持原生现状——数据
+在日志里完整、原生轨迹视图（Inspect）可看；自定义模型下个别 bash 行不可
+展开是原生 BashRow 对「无 terminal result view 行」的设计行为（见 §9.2），
+插件加面板 / 覆盖原生行均被用户否决。
 
 v0.4 的标题栏垃圾桶、回收站弹层、撤回重写（依赖 harness 槽位补丁）全部移除；
-fork 边界数学保留在 §5.1 供未来官方插槽就绪时复活。
+v0.5-v0.7 的侧栏归档图标在本版迁入设置页；fork 边界数学保留在 §5.1 供未来官方
+插槽就绪时复活。
 
 ### 1.2 历史基线
 
@@ -195,3 +210,108 @@ v0.4 曾实施（现大部分退役）：撤回重写（fork 桥接）、trash �
 - host：`src/host.js` — trash 归档联动、restore/destroy 反归档、cancel、
   restoreArchived、archive、purgeArchived RPC → 重启 `dsh web`。
 - client：`src/client.bundle.js` — 撤回按钮、归档行改造、displayTitle 修正 → 刷新即可。
+- v0.6 host：`src/host.js` — 自定义模型推理等级补齐（见 §9）→ 重启 `dsh web`。
+
+---
+
+## 9. v0.6 决策记录：自定义模型推理等级 + 工具数据可见性（用户裁决）
+
+### 9.1 功能 1：自定义模型推理等级 → **实施（宿主自动补齐，零 UI）**
+
+机制事实（rc.7 源码 + 运行实例核实）：
+
+- composer「推理等级」菜单只有在模型带推理元数据（`sessions.models` →
+  llm resolveModelInfo → 适配器 `reasoningInfo`）时才出现；手写自定义模型
+  无 `reasoningEfforts` 声明 → pi-ai 端 `model.reasoning=false` → 菜单缺失，
+  会话里无法切换思考等级。
+- 原生「模型设置」页刻意不提供推理等级控件（ui-settings-models 注释明示）；
+  配置 schema（llm-pi-ai provider profile）却完整支持 model 级
+  `reasoningEfforts`（等级→wire 值）与 provider 级 `reasoning`/`thinkingBudgets`。
+- 适配器按请求实时读配置，不改 settings 不进任何 UI，改完立即生效。
+- pi-ai 各条 openai-completions 发 `reasoning_effort`（对未知 baseURL
+  `supportsReasoningEffort` 默认 true）；`off` 档位在请求层被转换为"不发参数"。
+
+裁决：**插件宿主幂等补齐**。启动时（含启动后延迟二次补齐，防 pi-ai 命名空间
+晚注册）与 `settings/document-updated`（根上下文监听，`ctx.root.on` 已验证
+可收兄弟服务事件）后，对 `llm-pi-ai` 用户层所有未写 `reasoningEfforts` 的
+`models[]`（整数组替换写出——settings 路径操作不认数组下标，已用真实
+settings 服务验证）/ `modelOverrides` 条目写入
+`{ off: null, low: 'low', medium: 'medium', high: 'high' }`（经公开 settings
+服务 → settings.yaml 热加载）。已声明（dict 或 `false`）的不动；
+不支持推理的模型可由用户在 yaml 置 `reasoningEfforts: false` 退出。
+测试：`tests/reasoning.mjs` 17 项。
+
+### 9.2 功能 2：自定义模型工具输出在对话视图不可见 → **不做（保持现状）**
+
+- 数据侧：核对了 scnet/GLM、openrouter-0731 等"看不到输出"的会话日志，
+  全部工具调用的参数、结果原文均完整（90/38 条，0 缺失）——数据从未丢失，
+  原生轨迹视图（Inspect → Payload/Result）一直可看，与模型无关。
+- 渲染侧：对话里 bash 行是否可展开、有没有截断输出，取决于发射 `tool/result`
+  时宿主是否附上 terminal result view（`BashRow.expandable = terminal !== null
+  || genericError`）；view 由工具 presenter 在发射时推导、不持久化。无 view
+  且 state=ok 的行**按设计不可展开**（bash 工具对后台启动/执行错误给 generic
+  view）。dsh 代码中不存在按模型身份分叉的渲染路径。
+- 用户否决了两种插件路径：新面板（"别动 UI"）与覆盖 `tool.call.toolview` 的
+  bash 键（零覆盖原则）。结论：该差异是原生设计行为，插件不干预；数据出口
+  沿用原生轨迹（Inspect）视图。
+
+---
+
+## 10. v0.7 决策记录：活会话「彻底删除」后回到未分组（用户报障 → 修复）
+
+### 10.1 症状与根因
+
+用户实测：未分组（不归属任何工作区）的会话，原生「归档会话」→ 在本弹层
+「彻底删除」后，会话**没有消失**，反而回到「未分组」列表。
+
+根因（源码核实）：`destroy` 删除磁盘日志 + 记账槽 + **归档 id**，但 dsh 没有
+公开 API 让插件丢弃**宿主内存里的活会话**（`AgentHandle.dispose()` 是创建时
+一次性消费掉的 capability；`SessionStore`/`AgentRegistry` 无 detach-by-id）。
+`session.list` 从内存直接返回所有 live 会话（`listVisibleSessionSummaries` =
+`ctx.sessions.list()` ⊕ 持久层冷会话），于是：
+
+1. 归档 id 被移除 → 客户端 `host/archived-sessions-changed` 把会话“反归档”；
+2. 会话不在任何工作区（未分组）→ 出现在「未分组」；
+3. 宿主内存仍提供它 → 任何刷新/重连都不会让列表真正消失。
+
+这其实在 §2 硬边界第 49 行已记录（“删除后附着的会话会一直留到服务重启”），
+只是此前没暴露成可见症状。
+
+### 10.2 方案裁决（用户选择 A：插件内修复，不改 dsh）
+
+| 方案 | 裁决 |
+|---|---|
+| **A 插件内修复（采纳）**：destroy 活会话时**保留归档 id**（删磁盘+记账），使它不回到未分组；新增 host `listArchive` 上报每个归档 id 的 `dead`/`live`，客户端据此把“数据已删但仍在内存”的行置灰为“会话已删 · 重启后清除”，启动清扫（`purge`）在会话不再存活后自动清掉该 id | 采纳 |
+| B 改 dsh 本体：给 `ctx.agents`/`ctx.sessions` 加公开 `dispose(id)`，destroy 真正丢弃活会话并触发 `host/session-removed` | 未选（违背“不改 dsh 本体”，需重建全局安装的 dsh） |
+| C 纯客户端移除：destroy 后客户端伪造 `host/session-removed` 从列表删 | 未选（宿主内存仍会重新提供，任何刷新/重连都会复活） |
+
+### 10.3 行为变化
+
+- **冷会话**（本进程未打开）彻底删除：与之前一致——磁盘 + 归档 id + 记账全清。
+- **活会话**彻底删除：磁盘 + 记账全清；归档 id **保留**（隐藏），
+  弹层内该行置灰显示「会话已删 · 重启后清除」，无恢复/删除按钮；重启后启动
+  清扫自动把该 id 从归档集清掉。toast 提示“已彻底删除（记录将在重启后清除）”。
+- 新 host 方法 `listArchive`：返回归档集每个 id 的 `dead`（无持久数据）与
+  `live`（宿主内存驻留）。
+- wire 版本 2 → 3：旧宿主 + 新客户端会按设计走“请重启 dsh web”的 stale 提示。
+
+### 10.4 测试
+
+- `tests/host.mjs`：新增活会话 destroy 场景（目录/记账清、归档 id 保留、
+  `listArchive` dead+live、重启模拟后 purge 清掉该 id）+ 终态/重启断言调整。
+- `tests/smoke.mjs`：新增销毁活会话死行断言（置灰、无按钮、标注重启后清除）。
+
+### 10.5 v0.7 追加裁决：移除回收站/垃圾桶遗留（用户澄清）
+
+用户补充：当初设想的“回收站”与“归档”功能实际重叠——“第一次删除进回收站，
+回收站里可二次删除或恢复”，这个流程与“进归档后可恢复/彻底删除”完全一样，
+故回收站是冗余的；若有遗留记录一并删除。
+
+落地：宿主彻底移除退役 v0.4 的回收站实现：
+- 删除 `trash.json` 索引（`loadRecords`/`saveRecords`）与 `listTrash` RPC；
+- `restore` 只移出归档集（不再搬目录）；`destroy` 只删会话目录（不再清
+  trash 残留）；`purge` 不再把 trash 记录当“可恢复”；
+- 客户端删除 `listTrash` API 与“遗留搬运行”行模型；
+- 实机核查 `$DSH_HOME/better-webui/trash/` 为空（`trash.json` 仅 `[]`），
+  无遗留会话目录，故无数据需要迁移；删除该空目录。
+- wire 版本维持 3。

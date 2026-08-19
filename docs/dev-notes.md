@@ -190,16 +190,23 @@ host half 继承 `TypertRemoteService` + `@Remote('method')` 装饰器方法，�
 
 ## 6. UI：可用插槽与本次选型
 
-### 选用的两个（全部 additive，不覆盖任何原生件）
+### 选用的槽（v0.8 起，全部 additive，不覆盖任何原生件）
 
-1. **`conversation.session.header.actions`**（list，session scope）
-   - owner props 为空；框架给 `sessionId`、`useSessions` 等标准 kit。
-   - 注册：`ctx.slots.inject(name, () => ctx.slots.register({ name, id, order: 60, locale: NS, inject }, Comp))`。
-   - 渲染会话标题栏里的垃圾桶图标 → 两步确认（✓/✗）→ trash + 跳到新会话 + 撤销 toast。
+1. **`settings.section`**（list，root scope）——当前唯一的贡献
+   - owner props：`{ close }`；框架给 `useSessions`、`useWorkspaces` 等标准 kit。
+   - 注册：`ctx.slots.inject(name, () => ctx.slots.register({ name, id: 'better-webui-archive', order: 30, label: () => ctx.locale.bind(NS)('archive.title'), locale: NS, inject }, Comp))`。
+   - 渲染设置面板左侧导航里的「归档会话」页（紧跟「Agent 预设」order 20 下方）；
+     页面直接列出全部归档会话（查看/恢复/两步彻底删除/清除失效记录），无弹层、无计数。
+   - **为什么从这里**：原 `sidebar.footer.action` 归档图标与 ui-cordis 的动态插件
+     面板（CordisPanel）同槽，运行 probe 等动态插件时面板占据同位置把图标挤掉；
+     设置页从根上避开该冲突，原图标删除。
 
-2. **`sidebar.footer.action`**（list，root scope）
-   - owner props：`{ wide: boolean }`。
-   - v0.3：与 Settings 行对齐的一行**两个安静图标**——回收站（数量徽标 + 弹层：恢复/两步彻底删除）与归档查看器（弹层列出原生 `workspace.archiveSession` 归档的会话，点击行即 `ctx.sessions.open(id)` 回看，只读浏览不取消归档）。撤销 toast 宿主也在这里（root scope 常驻）。
+历史选型（已退役，仅供追溯）：
+- `conversation.session.header.actions`（list，session scope）：v0.3-v0.4 的标题栏
+  垃圾桶 → 两步确认 → trash + 撤销 toast。v0.4 后随「标题栏垃圾桶」一起移除。
+- `sidebar.footer.action`（list，root scope）：v0.3 起与 Settings 行对齐的一行
+  安静图标（回收站 + 归档查看器），v0.5 收缩为单枚归档图标，v0.8 迁移进
+  `settings.section` 后移除。
 
 ### 归档回看的数据来源（v0.3 新增，全部现成积木，零 host 改动）
 
@@ -288,8 +295,10 @@ pnpm run build        # = node build.mjs：包裹 client + 复制 host，零工�
 ### 验证清单
 
 1. `curl -s -X POST http://127.0.0.1:3080/better-webui/listTrash -H 'content-type: application/json' -d '{"type":"client-request","rpcId":"t1","method":"listTrash","payload":{}}'` → 应返回 `{...ok:true, value:{items:[]}}`（404 = host half 没加载）。
-2. 浏览器刷新 `http://127.0.0.1:3080`，会话标题栏应出现垃圾桶图标。
-3. 侧栏底部 Settings 行上方出现回收站 + 归档两个安静图标。
+2. 浏览器刷新 `http://127.0.0.1:3080`，设置面板左侧导航出现「归档会话」页
+   （位于「Agent 预设」下方）。
+3. 打开该页：直接列出全部归档会话（活行可恢复/两步彻底删除；死行置灰 + 页脚
+   「清除失效记录」）；不再有侧栏底部图标（已迁入设置页）。
 4. 部署核对：`sha1sum lib/client.js | cut -c1-12` 应等于 boot manifest 里的 `?rev=`（首页 HTML `plugins/@better-webui/better-webui/client.js?rev=…`）。注意插件 URL 带_scope_前缀 `@better-webui/`。
 5. `node tests/smoke.mjs` 全绿。
 
@@ -337,13 +346,12 @@ v0.4 曾实现"标题栏垃圾桶 + 回收站 + 撤回重写（fork 桥接）"�
 
 ### 11.2 删除的完整性（"真的都删了"的构成）
 
-彻底删除一个会话要清五处，v0.5 的 `destroy` 全部覆盖（tests/host.mjs 逐项断言）：
+彻底删除一个会话要清三处（v0.7 起回收站已移除，见 11.8），`destroy` 全部覆盖
+（tests/host.mjs 逐项断言）：
 
 | 残留物 | 位置 | 清理方式 |
 |---|---|---|
 | 会话目录 | `$DSH_HOME/sessions/<proj>/session-<id>/` | `rm -rf`（活会话先 cancel + flush） |
-| 回收站副本 | `$DSH_HOME/better-webui/trash/<id>/`（遗留） | `rm -rf` |
-| trash 记录 | `better-webui/trash/trash.json` | 重写索引 |
 | 归档集条目 | `storages/workspace.json` → `global.archivedSessionIds` | 注册表操作队列内 `setState`（见 11.3） |
 | 记账槽条目 | 同文件 → `tables.workspaces.*.sessionIds` | 注册表**公开 API** `entity.detachSession(id)` |
 
@@ -362,20 +370,80 @@ rc.7 依然没有公开 unarchive（dsh-workspace README 明示 archived session
 
 ### 11.4 启动自愈清扫
 
-`apply()` 注册完通道后跑一次 `purge`：把"既不活、不在持久层、也无 trash 记录"的
-归档 id 与记账 id 全部清掉（best-effort，失败仅日志）。历史遗留的死记账 id
-（v0.4 destroy 及手工清理残留）就是被它清的。
+`apply()` 注册完通道后跑一次 `purge`：把"既不活、也不在持久层"的归档 id 与
+记账 id 全部清掉（best-effort，失败仅日志）。历史遗留的死记账 id（v0.4 destroy
+及手工清理残留）就是被它清的。
 
 ### 11.5 行模型（client）
 
-归档弹层的行 = `archivedSessionIds ∪ trash.json 记录 id`，按 id 分三态：
-`byId` 有 → 活归档行（displayTitle）；无 `byId` 但有记录 → 遗留搬运行（可恢复/删除）；
-两者皆无 → 死行（置灰 + 「清除失效记录」入口出现在 hint 区）。归档集通过帧实时
-更新，trash 记录在弹层打开时拉取。
+设置页的行 = `archivedSessionIds`，按 id 分态：
+`byId` 有 → 活归档行（displayTitle）；两者皆无（或 host `listArchive` 报
+`dead`）→ 死行（置灰 + 「清除失效记录」入口出现在页脚；`dead && live` 的
+销毁活会话行另标「重启后清除」）。归档集通过帧实时更新，`listArchive` 在页面
+挂载（每次进入设置页）时拉取。
 
-### 11.6 测试（tests/smoke.mjs 22 项 + tests/host.mjs 20 项）
+### 11.6 测试（tests/smoke.mjs 28 项 + tests/host.mjs 20 项）
 
-- smoke：单一注册、无标题栏垃圾桶/回收站、三态行、restore/destroy/purge 的
-  两步确认与 RPC、toast、空态。
+- smoke：单一注册、无标题栏垃圾桶/回收站、活/死/销毁活会话行、restore/destroy/
+  purge 的两步确认与 RPC、toast、空态、旧宿主 stale。
 - host：真实临时 DSH_HOME + 模拟注册表（含 setState 持久化回文件的保真），
-  断言启动清扫、destroy 五处清理、restore 两条路径、workspace.json 终态零残留。
+  断言启动清扫、destroy 三处清理、restore、活会话保留归档 id、重启模拟 purge、
+  workspace.json 终态零残留。
+
+### 11.7 v0.7：活会话「彻底删除」不回未分组（修复记录）
+
+**问题**：未分组会话归档后在本弹层彻底删除，会话回到「未分组」而不是被删除。
+
+**根因**：`destroy` 把归档 id 一并移除，但活会话仍驻留宿主内存（`session.list`
+从内存返回它），于是「反归档 + 未分组 + 内存仍提供」三件事叠加，会话“复活”。
+dsh 无公开 API 丢弃活会话（`AgentHandle.dispose()` 是一次性 capability，
+`SessionStore`/`AgentRegistry` 无 detach-by-id）——§2 第 49 行早有记录。
+
+**修复（方案 A，用户裁决）**：
+- `destroy`：删除磁盘 + 记账照旧；**活会话保留归档 id**（删冷会话时仍移除）。
+  返回值增加 `keptArchived: true`。
+- 新增 host 方法 `listArchive`：返回归档集每个 id 的 `dead`（无持久数据）与
+  `live`（宿主内存驻留）。dead = 无 header 或日志文件不存在。
+- client：destroy 成功且 `keptArchived` 时 toast“已彻底删除（记录将在重启后清除）”；
+  行 dead 判定加入 host 的 `dead` 信号；`dead && live` 的行标「重启后清除」且无
+  恢复/删除按钮。
+- 重启后：启动清扫 `purge` 发现该 id 既不活也不在持久层 → 自动清掉。
+- wire 版本 2 → 3（新 client 对旧 host 走「请重启 dsh web」stale 提示）。
+
+**测试**：host.mjs 新增活会话 destroy + 重启模拟 purge 断言；smoke.mjs 新增
+`listArchive` dead+live 死行断言。wire 版本同步更新。
+
+### 11.8 v0.7 追加：移除回收站/垃圾桶遗留（用户裁决）
+
+用户澄清：当初设想的“回收站”与“归档”功能重叠——“第一次删除进回收站，回收站里可
+二次删除或恢复”，与“进归档后可恢复/彻底删除”流程相同，故回收站冗余；遗留记录一并
+删除。落地：
+- 宿主删除 `trash.json` 索引（`loadRecords`/`saveRecords`）与 `listTrash` RPC；
+  `restore` 只移出归档集；`destroy` 只删会话目录；`purge` 不再把 trash 记录当可恢复。
+- 客户端删除 `listTrash` API 与“遗留搬运行”行模型；行 = `archivedSessionIds`。
+- 实机核查 `$DSH_HOME/better-webui/trash/` 为空（`trash.json` 仅 `[]`，无会话目录），
+  无数据需迁移；删除该空目录。
+- wire 版本维持 3。
+
+### 11.9 v0.8：归档入口迁入设置页（用户裁决）
+
+**问题**：侧栏 `sidebar.footer.action` 的归档图标会被 ui-cordis 的动态插件面板
+（CordisPanel，同样注册在该 list 槽）挤掉——运行 probe 等动态插件时面板占据同
+位置，图标不可见/被覆盖。
+
+**裁决**：归档入口从侧栏迁进**设置面板左侧导航**，做成 `settings.section` 独立页
+（id `better-webui-archive`，order 30，紧跟「Agent 预设」页 order 20 下方），
+原 `sidebar.footer.action` 注册删除。附带两个打磨：
+- **去掉会话数量计数**：与其他设置页一致不计数（原「1 个会话」难看且随数量变位置）；
+  清除失效记录按钮保留，仅在存在死行时右对齐显示在列表下方。
+- **简介文案风格**：对齐「模型」页 intro（如「填入各提供方的 API 密钥即可使用其
+  模型。」）——改为一句话平实叙述，如「管理被原生界面归档隐藏的会话，可恢复到
+  侧栏或彻底删除。」，不再用「A · B · C 入口」式技术清单；样式同步 14px/22px。
+
+落地：
+- `settings.section` 注册带 `label: () => ctx.locale.bind(NS)('archive.title')`
+  （导航随语言切换）；页面挂载时 `reload()` + `checkHost()`（每次进入设置页重拉）。
+- 页面结构 = 标题 + 简介 + 列表卡（活/死行）+ 页脚清除按钮；toast 沿用 body portal。
+- wire 版本维持 3（无宿主改动）。
+- **测试**：smoke.mjs 改为断言设置页（单注册 `settings.section`、页面直列 3 行、
+  无计数、清除按钮在 `.bwt-footer`、简介非「入口」式），29 项全绿。

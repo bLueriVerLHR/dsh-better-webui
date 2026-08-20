@@ -96,7 +96,11 @@ const mockCtx = {
 plugin.apply(mockCtx)
 
 const itemReg = registrations.find((r) => r.spec.name === 'settings.section')
-check(registrations.length === 1 && itemReg !== undefined, 'apply() 只注册一个贡献（设置侧栏归档页）')
+const notifyReg = registrations.find((r) => r.spec.name === 'conversation.input.dock')
+const notifySettingsReg = registrations.find((r) => r.spec.name === 'settings.general.item')
+check(itemReg !== undefined && notifyReg !== undefined && notifySettingsReg !== undefined,
+  'apply() 注册三个贡献（设置页 + 会话提醒 + 通用设置行）')
+check(registrations.length === 3, '贡献数量精确为三个')
 check(registrations.every((r) => r.spec.name !== 'sidebar.footer.action'), '不再注册侧栏图标（与动态插件面板冲突，已移除）')
 check(document.getElementById('better-webui-style') !== null, '样式表已注入 <head>')
 
@@ -104,6 +108,10 @@ const injected = itemReg.spec.inject()
 check(typeof injected.api.restore === 'function' && typeof injected.api.destroy === 'function'
   && typeof injected.api.purge === 'function' && typeof injected.api.listArchive === 'function',
   'inject 面提供 restore/destroy/purge/listArchive API')
+check(notifyReg.spec.id === 'better-webui-notify' && typeof notifyReg.component === 'function',
+  '会话活动提醒注册到 conversation.input.dock（id better-webui-notify）')
+check(notifySettingsReg.spec.id === 'better-webui-notify' && typeof notifySettingsReg.component === 'function',
+  '提示音设置注册到 settings.general.item（id better-webui-notify）')
 
 /* Locale seat over the registered dictionary. */
 const dicts = {}
@@ -146,7 +154,10 @@ await new Promise((resolve) => {
     useSessions: (selector) => selector(listState),
     useWorkspaces: (selector) => selector(workspaceState),
   }))
-  setTimeout(resolve, 20)
+  // The archive page reloads asynchronously (listArchive RPC); give React
+  // time to commit the status rows (a tight 20ms wait was intermittently
+  // racing the RPC resolution and flaking the destroyed-live row assertion).
+  setTimeout(resolve, 80)
 })
 
 const $ = (sel) => host.querySelector(sel)
@@ -258,6 +269,134 @@ const staleRestore = [...($('.bwt-list')?.querySelectorAll('button') ?? [])].fin
 const staleDestroy = [...($('.bwt-list')?.querySelectorAll('button') ?? [])].find((b) => b.getAttribute('aria-label') === '彻底删除')
 check(staleRestore !== undefined && staleRestore.disabled === true, '旧宿主：恢复按钮禁用')
 check(staleDestroy !== undefined && staleDestroy.disabled === true, '旧宿主：删除按钮禁用')
+
+/* 10. Session activity notifications (NotifyDock, sound only) + General
+       settings row. jsdom has no AudioContext, so a recording fake stands in:
+       each oscillator created counts as one chime note (waiting = 2 notes,
+       done = 3). No popup is ever rendered. */
+let oscCalls = 0
+class FakeAudioCtx {
+  constructor() { this.state = 'running'; this.currentTime = 0; this.destination = {} }
+  resume() { return Promise.resolve() }
+  createOscillator() {
+    oscCalls += 1
+    return { type: '', frequency: { value: 0 }, connect() {}, start() {}, stop() {} }
+  }
+  createGain() {
+    return { gain: { setValueAtTime() {}, exponentialRampToValueAtTime() {} }, connect() {} }
+  }
+}
+dom.window.AudioContext = FakeAudioCtx
+dom.window.webkitAudioContext = FakeAudioCtx
+window.localStorage.clear()
+
+const notifyHost = document.createElement('div')
+document.body.appendChild(notifyHost)
+const notifyRoot = ReactDOMClient.createRoot(notifyHost)
+
+const sessionSnap = (overrides) => ({
+  sessionId: 'session-live',
+  running: false,
+  pending: [],
+  nodes: [],
+  ...overrides,
+})
+const renderNotify = async (snap, key) => {
+  await new Promise((resolve) => {
+    notifyRoot.render(h(notifyReg.component, { key, session: snap, t }))
+    setTimeout(resolve, 20)
+  })
+}
+const bodyNotify = () => document.body.querySelector('.bwt-notify')
+
+// Baseline: idle with nothing pending → no chime, no popup.
+await renderNotify(sessionSnap({}), 'n0')
+check(oscCalls === 0 && bodyNotify() === null, '提醒：空闲无 pending 无提示音、无弹窗')
+
+// Waiting: pending grows 0 → non-empty → waiting chime (2 notes), still no popup.
+await renderNotify(sessionSnap({}), 'n1')
+oscCalls = 0
+await renderNotify(sessionSnap({ pending: [{ kind: 'question' }] }), 'n1')
+check(oscCalls === 2, '提醒：pending 0→1 触发「等待」双音')
+check(bodyNotify() === null, '提醒：等待不弹窗')
+
+// Done: running true→false with empty pending and a non-interrupted tail →
+// done chime (3 notes).
+await renderNotify(sessionSnap({ running: true }), 'n3')
+oscCalls = 0
+await renderNotify(sessionSnap({ running: false, nodes: [{ kind: 'assistant', seq: 1 }] }), 'n3')
+check(oscCalls === 3, '提醒：running true→false 触发「完成」三音')
+check(bodyNotify() === null, '提醒：完成不弹窗')
+
+// Interrupted stop is NOT a completion.
+await renderNotify(sessionSnap({ running: true }), 'n4')
+oscCalls = 0
+await renderNotify(sessionSnap({ running: false, nodes: [{ kind: 'assistant', seq: 2, interrupted: true }] }), 'n4')
+check(oscCalls === 0, '提醒：被中断的回合不触发完成音')
+
+// Retry-exhaustion failure: turn ends with a turn-error node → error chime
+// (2 low notes), never the "done" chime.
+await renderNotify(sessionSnap({ running: true }), 'n4b')
+oscCalls = 0
+await renderNotify(sessionSnap({ running: false, nodes: [{ kind: 'turn-error', seq: 3, turn: 1, step: 1, message: 'boom' }] }), 'n4b')
+check(oscCalls === 2, '提醒：重试耗尽失败触发「错误」双音（非完成音）')
+
+// Output-token cap end → also an error/attention chime, not done.
+await renderNotify(sessionSnap({ running: true }), 'n4c')
+oscCalls = 0
+await renderNotify(sessionSnap({ running: false, nodes: [{ kind: 'turn-max-tokens', seq: 4, turn: 1, step: 1 }] }), 'n4c')
+check(oscCalls === 2, '提醒：输出上限结束触发「错误」双音（非完成音）')
+
+// Disabled pref → no chime even on a genuine transition.
+window.localStorage.setItem('better-webui:notify:enabled', '0')
+await renderNotify(sessionSnap({}), 'n5')
+oscCalls = 0
+await renderNotify(sessionSnap({ pending: [{ kind: 'question' }] }), 'n5')
+check(oscCalls === 0, '提醒：开关关闭时不发提示音')
+
+notifyRoot.unmount()
+notifyHost.remove()
+
+/* 11. General-settings row: on/off switch + volume slider, persisted to
+       localStorage (pure client — no host data). */
+window.localStorage.clear()
+const settingsHost = document.createElement('div')
+document.body.appendChild(settingsHost)
+const settingsRoot = ReactDOMClient.createRoot(settingsHost)
+await new Promise((resolve) => {
+  settingsRoot.render(h(notifySettingsReg.component, { t }))
+  setTimeout(resolve, 20)
+})
+
+const switchEl = settingsHost.querySelector('.bwt-switch')
+const sliderEl = settingsHost.querySelector('.bwt-volume input[type=range]')
+check(switchEl !== null && switchEl.getAttribute('role') === 'switch'
+  && switchEl.getAttribute('aria-checked') === 'true', '通用设置：默认开关开启')
+check(sliderEl !== null && sliderEl.value === '80' && sliderEl.disabled === false,
+  '通用设置：默认音量 80 且滑块可用')
+
+await new Promise((r) => { click(switchEl); setTimeout(r, 20) })
+check(window.localStorage.getItem('better-webui:notify:enabled') === '0'
+  && switchEl.getAttribute('aria-checked') === 'false', '通用设置：关闭开关写入 localStorage')
+check(sliderEl.disabled === true, '通用设置：关闭后滑块禁用')
+
+await new Promise((r) => { click(switchEl); setTimeout(r, 20) })
+check(window.localStorage.getItem('better-webui:notify:enabled') === '1', '通用设置：重新开启')
+
+// The slider listens to native events: `input` (dragging) only persists the
+// value; `change` (release) previews the chime once.
+oscCalls = 0
+sliderEl.value = '35'
+sliderEl.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
+await new Promise((r) => setTimeout(r, 20))
+check(window.localStorage.getItem('better-webui:notify:volume') === '35', '通用设置：音量滑块拖动写入 localStorage')
+check(oscCalls === 0, '通用设置：拖动中不试听')
+sliderEl.dispatchEvent(new dom.window.Event('change', { bubbles: true }))
+await new Promise((r) => setTimeout(r, 20))
+check(oscCalls === 3, '通用设置：松手时试听一次（完成三音）')
+
+settingsRoot.unmount()
+settingsHost.remove()
 
 root_.unmount()
 console.log(failures.length === 0 ? '\n全部通过 ✓' : `\n${failures.length} 项失败`)

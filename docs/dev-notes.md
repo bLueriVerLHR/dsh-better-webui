@@ -192,7 +192,7 @@ host half 继承 `TypertRemoteService` + `@Remote('method')` 装饰器方法，�
 
 ### 选用的槽（v0.8 起，全部 additive，不覆盖任何原生件）
 
-1. **`settings.section`**（list，root scope）——当前唯一的贡献
+1. **`settings.section`**（list，root scope）
    - owner props：`{ close }`；框架给 `useSessions`、`useWorkspaces` 等标准 kit。
    - 注册：`ctx.slots.inject(name, () => ctx.slots.register({ name, id: 'better-webui-archive', order: 30, label: () => ctx.locale.bind(NS)('archive.title'), locale: NS, inject }, Comp))`。
    - 渲染设置面板左侧导航里的「归档会话」页（紧跟「Agent 预设」order 20 下方）；
@@ -200,6 +200,64 @@ host half 继承 `TypertRemoteService` + `@Remote('method')` 装饰器方法，�
    - **为什么从这里**：原 `sidebar.footer.action` 归档图标与 ui-cordis 的动态插件
      面板（CordisPanel）同槽，运行 probe 等动态插件时面板占据同位置把图标挤掉；
      设置页从根上避开该冲突，原图标删除。
+
+2. **`conversation.input.dock`**（list，session scope）—— v0.9 新增的会话活动提示音
+   - owner props：`{ session: ConversationSnapshot, input: InputState }` —— 输入区的
+     即时快照，状态变化时由 dispatching skeleton 重渲染（无需订阅）。
+   - 注册：`ctx.slots.inject(name, () => ctx.slots.register({ name, id: 'better-webui-notify', order: 30, locale: NS }, NotifyDock))`。
+   - `NotifyDock` 本体不渲染任何可见内容（`return null`）——**只响铃、不弹窗**。
+   - 触发（仅状态跳变，ref 存上一次观察）：
+     - **等待输入**：`session.pending` 由 0 → 非空（`ask_user_question` 的 question /
+       approval / plan-review），下降双音。
+     - **回合结束**：`session.running` true→false 且 `pending` 为空时，按结尾节点
+       `lastTurnOutcome(nodes)` 路由：
+       - `assistant`（正常答复）→ 上升三音（完成）
+       - `turn-error` / `turn-max-tokens`（重试耗尽 / 硬错误 / 输出上限）→ 低沉双音
+         （错误，绝不与完成音混淆）
+       - `assistant-interrupted`（用户手动停止）→ 静音
+   - **为什么不会误响**：模型请求失败后安排重试时，`dsh-agent-loop` 的 `step()` 在
+     同一 `running` phase 的 `while(true)` 内重试（`agent/request-error` waterfall 返回
+     `retry` 就 `continue`），所以重试等待期间 `running` 保持 **true**，不会触发任何音；
+     重试耗尽才 `throw` → `turn/end(reason: error)` → phase→idle → `running` false，
+     此时结尾是 `turn-error`，只响**错误音**而非完成音。
+   - 声音用 Web Audio API 正弦合成（无音频资源），振幅按音量设置缩放；首次用户手势
+     （pointerdown/keydown）解锁 AudioContext，规避自动播放策略。
+   - **为什么从这里**：需要一个“会话打开期间始终挂载、且能拿到该会话 ConversationSnapshot”
+     的座席。`conversation.input.dock` 是 session scope 的 additive 槽，正好满足；
+     不覆盖任何原生件。
+
+3. **`settings.general.item`**（list，root scope）—— v0.9.1 新增的提示音设置行
+   - owner props 为空；行自绘 title/desc/控件（与 shipped 行一致），标准 props 只有
+     `useSessions`/`useWorkspaces`。注册带 `locale: NS` 让行拿到 `t`。
+   - 注册：`ctx.slots.inject(name, () => ctx.slots.register({ name, id: 'better-webui-notify', order: 30, locale: NS }, NotifySettingsRow))`。
+   - 行内容：开关（`button[role=switch]` + track/thumb，**复刻 trajectory 工具栏的原生
+     switch CSS**：track 20×10 圆角、thumb 6×6、`data-on` 时 business-primary + thumb
+     translate(10px)）+ 音量滑块（`<input type=range>`，`-webkit-`/`-moz-` 伪元素自绘
+     主题色 thumb/track）。
+   - 持久化：**localStorage**（`better-webui:notify:enabled` / `:volume`）。用户明确要求
+     不改宿主数据（担心未来 host 更新覆盖），所以不碰 settings.yaml / host.js —— 纯客户端，
+     刷新即生效，无需重启。
+   - 音量滑块用**原生事件监听**（ref + `addEventListener`），不依赖 React 受控
+     range 的合成 `onChange`（后者在 jsdom 里被 value tracker 挡住难测，原生监听在浏览器与
+     测试中行为一致）；input 上保留 no-op `onChange` 以消除 React「value without onChange」
+     警告。`input`（拖动中）只持久化值，**`change`（松手）才试听一次**，避免拖动全程
+     连响。
+   - **为什么从这里**：用户要的是“通用设置里放提示音调节”，且 dsh 通用设置正是
+     `settings.general.item` 行槽；一个行同时放下开关 + 滑块，状态天然共享。
+
+### 明确不做：模型超参设置页
+
+用户曾想“在设置里看/调 dsh 默认参数（temperature / top_p）”。调研结论（v0.9.1 记录）：
+
+- dsh 请求配置 `LlmCallConfig` / `GenerateOptions`：`temperature?`（请求级）、`maxTokens?`、
+  `stop?`、`reasoningEffort?` —— **没有 top_p**。
+- pi-ai `StreamOptions`：`temperature?`（请求级）；pi-ai `Model` 接口**没有** temperature
+  字段。全栈无 top_p。
+- `llm-pi-ai` 设置 schema `PiAiModelProfile`：只有 `id / name / contextWindow / maxTokens /
+  input / reasoningEfforts / compat` —— 无 temperature、无 topP。
+- 结论：temperature 是**请求级**而非模型级持久配置，top_p 全栈无注入点。做模型超参设置页
+  必须改 dsh 本体的请求链路（升级会被覆盖），超出插件范畴，**已放弃**。若只想展示/调整 schema
+  原生支持的模型能力字段（contextWindow / maxTokens / reasoning 等），可另立需求。
 
 历史选型（已退役，仅供追溯）：
 - `conversation.session.header.actions`（list，session scope）：v0.3-v0.4 的标题栏

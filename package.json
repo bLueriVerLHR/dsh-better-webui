@@ -1,7 +1,7 @@
 {
   "name": "@better-webui/better-webui",
-  "description": "Web GUI enhancement plugin: archive-session management (view / restore / two-step permanent delete) + custom-model reasoning-level provisioning",
-  "version": "0.8.0",
+  "description": "Web GUI enhancement plugin: archive-session management (view / restore / two-step permanent delete) + custom-model reasoning-level provisioning + session activity chimes (sound only, with on/off and volume in General settings; release-preview slider, error chime on failed turns)",
+  "version": "0.9.2",
   "private": true,
   "type": "module",
   "main": "lib/index.js",

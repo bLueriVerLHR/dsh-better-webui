@@ -69,8 +69,9 @@ const ctx = {
   effect: (dispose) => dispose,
 }
 exports.apply(ctx)
-check(registrations.length === 1 && registrations.includes('settings.section'),
-  `apply registers exactly the settings section slot (got: ${registrations.join(', ') || 'none'})`)
+check(registrations.length === 3 && registrations.includes('settings.section')
+  && registrations.includes('conversation.input.dock') && registrations.includes('settings.general.item'),
+  `apply registers all three slots (got: ${registrations.join(', ') || 'none'})`)
 
 if (failures.length > 0) {
   console.error('FAIL:', failures.join('; '))

@@ -75,14 +75,18 @@ high: high }`，写回同一个 `llm-pi-ai` 命名空间（持久化到 `setting
 
 删除未归档会话的推荐流程：原生会话行菜单 →「归档会话」→ 在本页彻底删除。
 
-## 安装（已装好）
+## 安装
 
-`~/.dsh/profiles/web/package.json`：
+在 dsh 的 profile 里把它装成 bundle（`@deepseek-ai/dsh-web-app` 对应的 profile）。
+以默认 `web` profile 为例，编辑 `~/.dsh/profiles/web/package.json`：
 
 ```json
-"dependencies": { "@blueriverlhr/dsh-better-webui": "link:/home/archie/forge/dsh-better-webui" },
+"dependencies": { "@blueriverlhr/dsh-better-webui": "<指向本仓库的路径，或 git/npm 依赖>" },
 "dsh": { "profile": { "bundles": ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-web-app", "@blueriverlhr/dsh-better-webui"] } }
 ```
+
+改完 `dsh web` 重启后生效（宿主 half 为启动时加载，client bundle 走 stat-poll
+热加载）。
 
 ## 开发
 

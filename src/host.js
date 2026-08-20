@@ -63,6 +63,7 @@
 import { existsSync, readFileSync, rmSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { registerExaSearchProvider } from './web-search-exa.js'
 
 const WAIT_FOR_IDLE_MS = 3000
 const CHANNEL = '/better-webui'
@@ -480,5 +481,17 @@ export function apply(ctx) {
       provision()
     })
     ctx.effect(() => disposeSettingsWatcher, 'better-webui: reasoning provisioning watcher')
+  }
+
+  // Keyless Exa web search: register a `ctx.web` search provider so the
+  // model-facing `web_search` tool (mounted by dsh-base's tool-web row) works
+  // without any API key — anonymous Exa hosted MCP by default, REST once an
+  // `EXA_API_KEY` appears. The seam's `searchProvider` is switched to this
+  // provider's id (`exa`) by this bundle's cordis.patch.yml override. Optional
+  // via ctx.get so the rest of this plugin never hard-depends on the web seam.
+  const web = ctx.get('web')
+  if (web !== undefined) {
+    const disposeExa = registerExaSearchProvider(ctx)
+    ctx.effect(() => disposeExa, 'better-webui: exa search provider')
   }
 }

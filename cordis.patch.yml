@@ -1,10 +1,22 @@
-# better-webui bundle patch: adds the host RPC/persistence plugin and the
-# browser-side UI overrides through the package's `dsh.client` metadata.
+# better-webui bundle patch: adds the host RPC/persistence plugin, the
+# browser-side UI overrides through the package's `dsh.client` metadata, and
+# the keyless Exa search provider.
 #
-# A single row is enough: the package main (`@blueriverlhr/dsh-better-webui`) is
-# the host half, and `dsh.client` in package.json tells the client-modules
-# node to also serve `/client` to the browser.
+# - `insert` adds this plugin's own row (host half = package main, client half
+#   served via `dsh.client`).
+# - The non-insert `- id: web` block OVERRIDES the dsh-base `web` row in place
+#   (last bundle layer wins — applyEntryPatches merges by id, name must match):
+#   it points the web seam's `searchProvider` at this plugin's Exa provider
+#   (`exa`), which works without any API key via Exa's anonymous hosted MCP.
+#   Do NOT move this into `insert` — a second `web` insert would duplicate the
+#   row; a non-insert override is the supported way for a later bundle layer to
+#   change an earlier row's config.
 
 - insert:
     - id: dsh-better-webui
       name: '@blueriverlhr/dsh-better-webui'
+
+- id: web
+  name: '@deepseek-ai/dsh-web'
+  config:
+    searchProvider: exa

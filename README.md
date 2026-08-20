@@ -2,9 +2,31 @@
 
 DeepSeek Harness Web GUI 插件：**归档会话管理**（查看 · 恢复 · 二次确认彻底删除）+
 **自定义模型推理等级自动补齐**（让自定义模型像预制模型一样能用原生「推理等级」菜单）+
-**会话活动提示音**（agent 等待输入 / 完成任务时播放提示音）。
+**会话活动提示音**（agent 等待输入 / 完成任务时播放提示音）+
+**免密钥 Exa 网络搜索**（无 API key 也能用原生 `web_search`）。
 
 ## 功能
+
+### 免密钥 Exa 网络搜索（v0.10 新增）
+
+注册一个 `ctx.web` 搜索 provider（id `exa`），让 dsh 原生的 `web_search` 工具
+**在没有 API key 的情况下也能真搜索**，无需任何配置：
+
+- **匿名 MCP**（默认）：走 Exa 官方匿名托管 MCP（`mcp.exa.ai/mcp`，JSON-RPC
+  `tools/call`，无凭据、有限流），结果归一化成 `web_search` 的源列表
+- **REST 升级**（可选）：设置了 `EXA_API_KEY`（环境变量）后自动切到 Exa
+  `POST /search`（`Bearer` 认证，限额更高），无需重启
+- 行为与原生搜索一致：来源 URL / 标题 / snippet / 日期、`web_search` 结果卡片，
+  都由 dsh 自带工具层处理，本插件只补 provider
+
+> 注：匿名路径是 Exa 的公共限流服务，429 时工具会提示配置 `EXA_API_KEY` 升级。
+> 源码移植自 [@tonydua/dsh-web-search-exa](https://github.com/TonyDua/dsh-web-search-exa)
+> （MIT，版权与许可全文见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)），
+> 策略沿用 oh-my-pi 的「有 key 走 REST、无 key 走匿名 MCP」。
+
+生效方式：插件 bundle patch 里用非 insert 覆盖把 `web` 行的 `searchProvider`
+指向 `exa`（`deepseek-official` 缺 key 时不可用，所以切到本 provider）；
+改 host half 后**重启 `dsh web`**。
 
 ### 会话活动提示音（v0.9 新增）
 
@@ -91,10 +113,11 @@ high: high }`，写回同一个 `llm-pi-ai` 命名空间（持久化到 `setting
 ## 开发
 
 ```sh
-pnpm run build          # 产出 lib/index.js (host) + lib/client.js (browser)
+pnpm run build          # 产出 lib/index.js + lib/web-search-exa.js (host) + lib/client.js (browser)
 node tests/smoke.mjs    # 客户端 jsdom 集成测试（真实 React 18.3.1 + 真实点击）
 node tests/host.mjs     # 宿主 half 集成测试（真实临时目录 + 模拟注册表，验证彻底删除无残留）
 node tests/reasoning.mjs # 宿主 half 推理等级补齐测试（模拟 settings 服务，验证幂等补齐/不覆盖/监听）
+node tests/web-search-exa.mjs # 免密钥 Exa 搜索 provider 测试（模拟 ctx.web + fetch，验证匿名 MCP/REST/429/abort）
 ```
 
 - 改 client half → 刷新浏览器即可（webserver stat-poll 自动热加载）

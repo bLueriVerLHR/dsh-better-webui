@@ -33,4 +33,5 @@ const bundle = `window.__ModuleLoader__.load({ id: '@blueriverlhr/dsh-better-web
 writeFileSync(join(root, 'lib/client.js'), bundle)
 
 copyFileSync(join(root, 'src/host.js'), join(root, 'lib/index.js'))
-console.log('better-webui: built lib/index.js and lib/client.js')
+copyFileSync(join(root, 'src/web-search-exa.js'), join(root, 'lib/web-search-exa.js'))
+console.log('better-webui: built lib/index.js, lib/web-search-exa.js, and lib/client.js')

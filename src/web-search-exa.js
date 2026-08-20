@@ -392,18 +392,20 @@ class ExaSearchProvider {
 // ── Registration ────────────────────────────────────────────────────────────
 
 /**
- * Register the keyless Exa search provider with `ctx.web`.
+ * Register the keyless Exa search provider with the `ctx.web` service.
  *
- * @param ctx - host plugin context whose optional `web` service receives the
- *   provider. Callers guard on `ctx.get('web')` being present (dsh-base always
- *   mounts it); registration is effect-scoped via the returned disposer.
+ * @param web - the `web` service instance (already obtained via
+ *   `ctx.get('web')` by the caller). It is passed explicitly, NOT accessed as
+ *   `ctx.web`, because Cordis only allows `ctx.<service>` access for services
+ *   declared in the plugin's `inject` — and this provider is optional, so the
+ *   caller reads the seam with `ctx.get('web')` instead.
  * @param section - optional configuration overrides (defaults + `EXA_API_KEY`
  *   env are applied per search when a field is absent).
  * @returns the disposer that unregisters the provider.
  */
-export function registerExaSearchProvider(ctx, section = {}) {
+export function registerExaSearchProvider(web, section = {}) {
   const provider = new ExaSearchProvider(() => resolveOptions(section))
-  return ctx.web.registerSearchProvider(provider)
+  return web.registerSearchProvider(provider)
 }
 
 export {

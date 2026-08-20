@@ -24,10 +24,8 @@ const web = {
     return () => { registered.splice(registered.indexOf(provider), 1) }
   },
 }
-const ctx = { web }
-
 /* 1. registration wires the provider with id `exa` and always-usable. */
-const dispose = exa.registerExaSearchProvider(ctx)
+const dispose = exa.registerExaSearchProvider(web)
 check(registered.length === 1, 'provider 注册进 ctx.web')
 const provider = registered[0]
 check(provider.id === 'exa', `provider id 为 "exa"（实际 ${provider.id}）`)

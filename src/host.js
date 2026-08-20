@@ -491,7 +491,7 @@ export function apply(ctx) {
   // via ctx.get so the rest of this plugin never hard-depends on the web seam.
   const web = ctx.get('web')
   if (web !== undefined) {
-    const disposeExa = registerExaSearchProvider(ctx)
+    const disposeExa = registerExaSearchProvider(web)
     ctx.effect(() => disposeExa, 'better-webui: exa search provider')
   }
 }

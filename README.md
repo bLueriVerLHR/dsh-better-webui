@@ -97,3 +97,4 @@ node tests/reasoning.mjs # 宿主 half 推理等级补齐测试（模拟 setting
 - 改 host half → 重启 `dsh web`
 
 完整机制说明见 [docs/dev-notes.md](docs/dev-notes.md)；设计裁决记录见 [docs/design.md](docs/design.md)。
+

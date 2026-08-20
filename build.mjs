@@ -26,7 +26,7 @@ import { fileURLToPath } from 'node:url'
 const root = fileURLToPath(new URL('.', import.meta.url))
 
 const body = readFileSync(join(root, 'src/client.bundle.js'), 'utf8')
-const bundle = `window.__ModuleLoader__.load({ id: '@better-webui/better-webui', factory: (require) => {\n`
+const bundle = `window.__ModuleLoader__.load({ id: '@blueriverlhr/dsh-better-webui', factory: (require) => {\n`
   + `var module = { exports: {} };\nvar exports = module.exports;\n`
   + `Object.defineProperty(exports, Symbol.toStringTag, { value: 'Module' });\n`
   + `${body}\nreturn module.exports;\n} });\n`

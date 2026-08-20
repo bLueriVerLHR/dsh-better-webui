@@ -11,8 +11,8 @@
 | 运行中的服务 | `dsh web`，PID 由 `ps aux | grep "dsh web"` 找，监听 `http://127.0.0.1:3080` |
 | 服务实际 home | `DSH_HOME=/home/archie/.dsh`（注意：工作区里的 `.dsh-better/` 不是本服务的 home，是历史试验残留） |
 | 实际使用的 profile | `/home/archie/.dsh/profiles/web/`，`package.json` 的 `dsh.profile.bundles` 只有 `dsh-base` + `dsh-web-app` |
-| 插件安装方式 | `profiles/web/package.json` 的 `dependencies` 里 `"@better-webui/better-webui": "link:/home/archie/forge/better-webui"`，再在 `bundles` 数组加上包名 |
-| 插件源码 | `/home/archie/forge/better-webui`（本仓库） |
+| 插件安装方式 | `profiles/web/package.json` 的 `dependencies` 里 `"@blueriverlhr/dsh-better-webui": "link:/home/archie/forge/dsh-better-webui"`，再在 `bundles` 数组加上包名 |
+| 插件源码 | `/home/archie/forge/dsh-better-webui`（本仓库） |
 | 插件回收站数据 | `$DSH_HOME/better-webui/trash/`（`trash.json` 索引 + 每会话一个目录） |
 | dsh 源码（只读参考） | `/home/archie/forge/deepseek-harness` |
 | 全局安装的 dsh | `/home/archie/.nvm/versions/node/v24.18.0/lib/node_modules/@deepseek-ai/dsh/`（运行的正是它，不是源码 checkout） |
@@ -78,8 +78,8 @@ better-webui/
 
 ```yaml
 - insert:
-    - id: better-webui
-      name: '@better-webui/better-webui'
+    - id: dsh-better-webui
+      name: '@blueriverlhr/dsh-better-webui'
 ```
 
 host half 以函数插件（`export const inject` / `export function apply`）形式加载；class 插件（default export Service）也支持，但函数形态免编译、生命周期干净，本插件用它。
@@ -91,7 +91,7 @@ host half 以函数插件（`export const inject` / `export function apply`）�
 浏览器侧**不是普通 ESM**，是这个信封：
 
 ```js
-window.__ModuleLoader__.load({ id: '@better-webui/better-webui', factory: (require) => {
+window.__ModuleLoader__.load({ id: '@blueriverlhr/dsh-better-webui', factory: (require) => {
 var module = { exports: {} };
 var exports = module.exports;
 // ...你的代码，exports.inject = [...] / exports.apply = function (ctx) {...}
@@ -320,7 +320,7 @@ host half 继承 `TypertRemoteService` + `@Remote('method')` 装饰器方法，�
 运行：
 
 ```sh
-cd /home/archie/forge/better-webui
+cd /home/archie/forge/dsh-better-webui
 npm run build && node tests/smoke.mjs
 ```
 
@@ -339,7 +339,7 @@ npm run build && node tests/smoke.mjs
 ## 8. 构建 & 热加载操作卡
 
 ```sh
-cd /home/archie/forge/better-webui
+cd /home/archie/forge/dsh-better-webui
 pnpm run build        # = node build.mjs：包裹 client + 复制 host，零工具链依赖
 
 # 只改了 client：什么都不用做，webserver stat-poll 会广播 reload（浏览器自动刷新插件）
@@ -357,7 +357,7 @@ pnpm run build        # = node build.mjs：包裹 client + 复制 host，零工�
    （位于「Agent 预设」下方）。
 3. 打开该页：直接列出全部归档会话（活行可恢复/两步彻底删除；死行置灰 + 页脚
    「清除失效记录」）；不再有侧栏底部图标（已迁入设置页）。
-4. 部署核对：`sha1sum lib/client.js | cut -c1-12` 应等于 boot manifest 里的 `?rev=`（首页 HTML `plugins/@better-webui/better-webui/client.js?rev=…`）。注意插件 URL 带_scope_前缀 `@better-webui/`。
+4. 部署核对：`sha1sum lib/client.js | cut -c1-12` 应等于 boot manifest 里的 `?rev=`（首页 HTML `plugins/@blueriverlhr/dsh-better-webui/client.js?rev=…`）。注意插件 URL 带_scope_前缀 `@blueriverlhr/`。
 5. `node tests/smoke.mjs` 全绿。
 
 ---

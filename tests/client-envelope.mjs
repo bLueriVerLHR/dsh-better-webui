@@ -26,7 +26,7 @@ const window = {
 new Function('window', source)(window)
 
 if (handoff === undefined) throw new Error('bundle never called __ModuleLoader__.load')
-if (handoff.id !== '@better-webui/better-webui') throw new Error(`handoff id mismatch: ${handoff.id}`)
+if (handoff.id !== '@blueriverlhr/dsh-better-webui') throw new Error(`handoff id mismatch: ${handoff.id}`)
 if (typeof handoff.factory !== 'function') throw new Error('handoff.factory is not a function')
 
 // --- 3: platform-static require stub (the real table resolves these seeds) ---

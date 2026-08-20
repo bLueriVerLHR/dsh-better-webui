@@ -1,4 +1,4 @@
-# better-webui
+# @blueriverlhr/dsh-better-webui
 
 DeepSeek Harness Web GUI 插件：**归档会话管理**（查看 · 恢复 · 二次确认彻底删除）+
 **自定义模型推理等级自动补齐**（让自定义模型像预制模型一样能用原生「推理等级」菜单）+
@@ -80,8 +80,8 @@ high: high }`，写回同一个 `llm-pi-ai` 命名空间（持久化到 `setting
 `~/.dsh/profiles/web/package.json`：
 
 ```json
-"dependencies": { "@better-webui/better-webui": "link:/home/archie/forge/better-webui" },
-"dsh": { "profile": { "bundles": ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-web-app", "@better-webui/better-webui"] } }
+"dependencies": { "@blueriverlhr/dsh-better-webui": "link:/home/archie/forge/dsh-better-webui" },
+"dsh": { "profile": { "bundles": ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-web-app", "@blueriverlhr/dsh-better-webui"] } }
 ```
 
 ## 开发

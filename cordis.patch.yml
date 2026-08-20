@@ -1,10 +1,10 @@
 # better-webui bundle patch: adds the host RPC/persistence plugin and the
 # browser-side UI overrides through the package's `dsh.client` metadata.
 #
-# A single row is enough: the package main (`@better-webui/better-webui`) is
+# A single row is enough: the package main (`@blueriverlhr/dsh-better-webui`) is
 # the host half, and `dsh.client` in package.json tells the client-modules
 # node to also serve `/client` to the browser.
 
 - insert:
-    - id: better-webui
-      name: '@better-webui/better-webui'
+    - id: dsh-better-webui
+      name: '@blueriverlhr/dsh-better-webui'

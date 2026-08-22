@@ -713,3 +713,11 @@ export function apply(ctx) {
 - 新增 locale 键 `retry.pageTitle` / `retry.pageDesc`（页标题/简介，独立于
   `retry.title`/`retry.desc` 卡片文案）。
 
+**提示音卡重构**（用户反馈，同 v0.20 迭代）：`chime.enabled` 从「启用提示音」
+改为「启动」、`chime.volume` 从「提示音音量」改为「调整音量」（en 对应
+`Enable chime` / `Adjust volume`）；描述文本只在卡片大项下（`chime.desc`）出现
+一次，子行不再重复。卡片由单行（标题+描述+开关+滑杆挤一行）改为**两行**：
+`启动` 行 = 文本 + 开关，`调整音量` 行 = 文本 + 滑杆（复用 `.bwts-chimerow` /
+`.bwts-volume`，删除不再使用的 `.bwts-chimerowdesc` 样式）。所有键均中英双语
+（zh/en 各 26 键，键集一致，smoke 断言两行标题 + 无重复描述）。
+

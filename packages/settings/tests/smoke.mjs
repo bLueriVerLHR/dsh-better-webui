@@ -124,8 +124,10 @@ check(maxRetriesInput.value === '2', '「恢复默认」把重试次数重置为
 root.unmount()
 host.remove()
 
-/* 7. Render the better-webui page: chime card only — switch + slider persisted
-      to the same localStorage keys the chime dock reads. No retry card here. */
+/* 7. Render the better-webui page: chime card only — two function rows
+      (启动 switch + 调整音量 slider) with the description living once under
+      the card head; persisted to the same localStorage keys the chime dock
+      reads. No retry card here. */
 const hubHost = dom.window.document.createElement('div')
 dom.window.document.body.appendChild(hubHost)
 const hubRoot = ReactDOMClient.createRoot(hubHost)
@@ -137,6 +139,14 @@ await new Promise((resolve) => {
 check(hubHost.querySelector('.bwts-switch') !== null, 'better-webui 页保留提示音开关')
 check(hubHost.querySelector('.bwts-input') === null, 'better-webui 页不含重试输入框（已拆走）')
 check(hubHost.querySelector('.bwts-plist') === null, 'better-webui 页不含 provider 状态列表（已拆走）')
+
+/* Chime card anatomy: two rows, each a single label (no per-row description
+   duplication — the description sits once under the card head). */
+const chimeRows = hubHost.querySelectorAll('.bwts-chimerow')
+const rowTitles = [...chimeRows].map((row) => row.querySelector('.bwts-chimerowtitle').textContent)
+check(chimeRows.length === 2 && rowTitles[0] === '启动' && rowTitles[1] === '调整音量',
+  '提示音卡两行：「启动」+「调整音量」')
+check(hubHost.querySelector('.bwts-chimerowdesc') === null, '提示音子行无重复描述（描述只在卡片大项下）')
 
 const switchEl = hubHost.querySelector('.bwts-switch')
 const sliderEl = hubHost.querySelector('.bwts-volume input[type=range]')

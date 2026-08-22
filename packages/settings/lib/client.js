@@ -67,8 +67,8 @@ var DICT = {
 
     'chime.title': '会话提示音',
     'chime.desc': 'Agent 等待输入或完成回合时播放提示音（音量 0 为静音）。',
-    'chime.enabled': '启用提示音',
-    'chime.volume': '提示音音量',
+    'chime.enabled': '启动',
+    'chime.volume': '调整音量',
   },
   en: {
     'settings.title': 'Better WebUI',
@@ -98,7 +98,7 @@ var DICT = {
     'chime.title': 'Session chime',
     'chime.desc': 'Play a chime when the agent waits for input or finishes a turn (volume 0 mutes).',
     'chime.enabled': 'Enable chime',
-    'chime.volume': 'Chime volume',
+    'chime.volume': 'Adjust volume',
   },
 }
 
@@ -142,11 +142,11 @@ var CSS = [
   '.bwts-pstatus[data-custom]{color:var(--dsw-alias-state-warning-primary);}',
   '.bwts-pstatus[data-unset]{color:var(--dsw-alias-label-caption);}',
 
-  /* chime card: switch + volume (reuses the General-row anatomy) */
+  /* chime card: two rows — enable switch + volume slider (description lives
+     once under the card head, not repeated per row) */
   '.bwts-chimerow{display:flex;align-items:center;gap:16px;width:100%;}',
   '.bwts-chimerowtext{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;}',
   '.bwts-chimerowtitle{font-size:14px;line-height:20px;color:var(--dsw-alias-label-primary);}',
-  '.bwts-chimerowdesc{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary);}',
   '.bwts-switch{display:inline-flex;flex:none;align-items:center;justify-content:center;width:32px;height:20px;padding:0;border:none;background:transparent;cursor:pointer;}',
   '.bwts-switch:disabled{cursor:default;}',
   '.bwts-switch:focus-visible{outline:1px solid var(--dsw-alias-state-business-primary);outline-offset:1px;border-radius:999px;}',
@@ -383,8 +383,7 @@ function ChimeCard(props) {
       h('div', { className: 'bwts-carddesc' }, t('chime.desc'))),
     h('div', { className: 'bwts-chimerow' },
       h('div', { className: 'bwts-chimerowtext' },
-        h('div', { className: 'bwts-chimerowtitle' }, t('chime.enabled')),
-        h('div', { className: 'bwts-chimerowdesc' }, t('chime.desc'))),
+        h('div', { className: 'bwts-chimerowtitle' }, t('chime.enabled'))),
       h('button', {
         type: 'button',
         className: 'bwts-switch',
@@ -397,7 +396,10 @@ function ChimeCard(props) {
           className: 'bwts-switch-track',
           'data-on': enabled ? 'true' : undefined,
           'aria-hidden': 'true',
-        }, h('span', { className: 'bwts-switch-thumb' }))),
+        }, h('span', { className: 'bwts-switch-thumb' })))),
+    h('div', { className: 'bwts-chimerow' },
+      h('div', { className: 'bwts-chimerowtext' },
+        h('div', { className: 'bwts-chimerowtitle' }, t('chime.volume'))),
       h('label', { className: 'bwts-volume', title: t('chime.volume') },
         h('input', {
           ref: volumeInput,

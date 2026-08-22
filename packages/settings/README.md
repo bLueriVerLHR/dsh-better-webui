@@ -7,8 +7,9 @@
 
 页面内容（v0.20 起两个设置页）：
 
-- **better-webui 页**（`settings.section`，order 25）：**只保留会话提示音**
-  开关 + 音量滑块（0-100，0 静音）。纯客户端 localStorage（键
+- **better-webui 页**（`settings.section`，order 25）：**只保留会话提示音卡**，
+  描述文本放在卡片大项下，卡内两行功能项——「**启动**」（开关，启用/停用提示音）
+  与「**调整音量**」（滑杆 0-100，0 静音）。纯客户端 localStorage（键
   `better-webui:notify:enabled` / `:volume` 不变，老用户设置不丢），chime 包
   的播放逻辑继续读这两个键。无需重启。
 - **重试策略页**（`settings.section`，order 26）：DSH 原生重试默认

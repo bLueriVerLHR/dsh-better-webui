@@ -1,7 +1,7 @@
 {
   "name": "@blueriverlhr/dsh-better-webui-settings",
   "description": "Web GUI dedicated better-webui settings page: configurable LLM retry policy (max retries + exponential backoff) provisioned into every llm-pi-ai provider, plus the session-chime switch and volume moved out of General settings. Host RPC channel + settings page.",
-  "version": "0.20.0",
+  "version": "0.20.1",
   "private": true,
   "type": "module",
   "main": "lib/index.js",

@@ -1,7 +1,7 @@
 {
   "name": "@blueriverlhr/dsh-better-webui-archive",
   "description": "Web GUI archive-session management: view / restore / two-step permanent delete for sessions hidden by the native archive. Host RPC channel + settings page.",
-  "version": "0.20.0",
+  "version": "0.20.1",
   "private": true,
   "type": "module",
   "main": "lib/index.js",

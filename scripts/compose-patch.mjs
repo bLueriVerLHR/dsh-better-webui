@@ -31,6 +31,7 @@ const FEATURES = [
   'search',
   'bashguard',
   'settings',
+  'modelparams',
 ]
 
 /** Import one feature's patch source (default export: the patch data array). */

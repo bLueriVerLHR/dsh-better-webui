@@ -1,7 +1,7 @@
 # @blueriverlhr/dsh-better-webui
 
-DeepSeek Harness Web GUI 增强插件 —— **monorepo 元包**：一个"大包"聚合六个解耦的功能小包。
-**安装这个包 = 六个功能全部挂上**；每个功能也都可以单独安装（见 [按需安装](#按需安装)）。
+DeepSeek Harness Web GUI 增强插件 —— **monorepo 元包**：一个"大包"聚合七个解耦的功能小包。
+**安装这个包 = 七个功能全部挂上**；每个功能也都可以单独安装（见 [按需安装](#按需安装)）。
 
 功能清单：
 
@@ -13,6 +13,7 @@ DeepSeek Harness Web GUI 增强插件 —— **monorepo 元包**：一个"大包
 | **免密钥 Exa 网络搜索**（无 API key 也能用原生 `web_search`） | `@blueriverlhr/dsh-better-webui-search` | host |
 | **持久化 bash 卡顿卫士**（minimal 预设的持久终端退化为 ~3s 沉默档后自动重置 shell） | `@blueriverlhr/dsh-better-webui-bashguard` | host |
 | **可配置重试策略 + 专属设置页**（调大重试次数/退避；better-webui 偏好页 + 独立重试策略页，含提示音音量） | `@blueriverlhr/dsh-better-webui-settings` | host + client |
+| **模型采样参数控制**（输入区温度输入框，全局默认温度，新会话生效、会话内固定；logprobs/penalty 标注暂不支持） | `@blueriverlhr/dsh-better-webui-modelparams` | host + client |
 
 > 拆分动机与架构（设计模式、风险隔离、维护性）见 [docs/monorepo.md](docs/monorepo.md)。
 
@@ -184,6 +185,22 @@ better-webui 页，含重试卡），集中管理 better-webui 的功能偏好�
 生效方式：宿主改动（RPC 通道 + 设置命名空间）→ **重启 `dsh web`**；客户端页面
 改动刷新浏览器即可。
 
+### 模型采样参数控制（modelparams）
+
+输入区（composer 工具行、发送键前）的**常驻温度输入框**（数字输入，不是滑杆）＋
+▾ 弹出面板，配置**全局默认温度**。语义：**每个新会话取默认值，会话内固定**。
+
+- **temperature**：可用。经官方 `agent/request` 钩子注入（新会话首请求解析
+  `启用 ? 全局温度 : 跟随模型默认`，按会话钉住并保持固定；`agent/disposed`
+  清理会话态）。零 dsh 源码修改。
+- **logprobs / penalty**：面板中显示「**暂不支持（等上游）**」——harness 词汇表
+  与两个 adapter 均无这些字段，唯一出路是 pi-ai 0.84 的 `samplingParams` 透传
+  （等 dsh-llm-pi-ai 升级采用，详见 [docs/design.md](docs/design.md) §11）。
+- **生效方式**：持久化（写入 settings.yaml，重启仍在）或热调（本次运行生效，
+  开机清除残留）；「恢复默认」一键回到「禁用 / 1.0 / 持久化」。
+- **双语**：zh / en 两套文案。
+- 宿主改动（RPC + 设置命名空间）→ **重启 `dsh web`**；客户端改动刷新浏览器即可。
+
 ---
 
 ## 安装
@@ -203,7 +220,7 @@ profile）。以默认 `web` profile 为例，编辑 `~/.dsh/profiles/web/packag
 ```
 
 > **本地开发务必用 `file:` 而不是 `link:`**：pnpm 对 `link:` 依赖只做软链、**不安装
-> 其传递依赖**，而 `file:` 会安装元包声明的五个小包并把它们平铺进
+> 其传递依赖**，而 `file:` 会安装元包声明的七个（小）包并把它们平铺进
 > `profiles/<name>/node_modules`（Loader 与 client-modules registry 都从 profile
 > baseUrl 解析行名）。发布到 npm 后改回版本号依赖即可，pnpm 会自动拉齐小包。
 > 改完在 profile 目录 `pnpm install`（如无 TTY 加 `CI=true --no-frozen-lockfile`），
@@ -253,6 +270,8 @@ npm test        # 构建 + 运行全部测试（见下）
 | `packages/bashguard/tests/stall-guard.mjs` | 卡顿卫士（纯决策逻辑 + tools/execute 接线） |
 | `packages/settings/tests/host.mjs` | 重试策略宿主：规划/应用/幂等/不覆盖手写 |
 | `packages/settings/tests/smoke.mjs` | better-webui 设置页：重试卡 + 提示音卡 + RPC/localStorage |
+| `packages/modelparams/tests/host.mjs` | 采样参数宿主：RPC/apply/reset + agent/request 会话级固定 + hot 清除 |
+| `packages/modelparams/tests/smoke.mjs` | 采样参数客户端：输入框（非滑杆）+ 面板 + 暂不支持标注 + RPC/双语 |
 | `tests/composition.mjs` | patch 组合守卫：提交的 cordis.patch.yml 与各包源一致 |
 | `tests/client-envelope.mjs` | 每个 client 包的加载信封 + 插槽注册（参数化） |
 

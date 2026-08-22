@@ -384,11 +384,11 @@ top_p 正确、对 temperature 过严**——漏掉了 `agent/request` 这个官
   `samplingParams` 写入 → 热加载）干净落地，且能覆盖 top_p / 惩罚系数；在那之前
   只能做 temperature（+maxTokens）。
 
-### 11.4 拟定设计（本次未实施，供未来落地）
+### 11.4 拟定设计（供未来落地）
 
 - 新子包 `packages/modelparams`（host + client，遵循「一功能一包」）。
 - **Host**：`agent/request` 拦截器（读 `next()` 返回的 config → 按解析结果返回
-  替换配置）+ 自有 settings 命名空间 `better-webui.modelparams` + RPC 通道
+  替换配置）+ 自有 settings 命名空间 `better-webui-modelparams` + RPC 通道
   `/better-webui-modelparams`（Command 方法表，沿用 settings 包模式）。
 - **配置模型**：三级解析 —— **全局 > provider > provider/model**，最具体者胜出
   （Chain of Responsibility，纯函数可单测）。
@@ -398,10 +398,23 @@ top_p 正确、对 temperature 过严**——漏掉了 `agent/request` 这个官
 - **设计模式**：拦截器/装饰器（agent/request）、责任链（三级解析）、Command
   （RPC 方法表）、策略（每参数一种应用策略）、纯函数决策核心（可单测）。
 
-### 11.5 用户裁决（2026-08）
+### 11.5 用户裁决（2026-08）与 v0.21 落地
 
-- **本次不做模型超参功能**，记录探索以备未来继续。
-- 粒度确认：全局 > provider > provider/model 三级（maxTokens 不纳入——配置
-  provider 时即可设）。
-- 顺带裁决：**现有 better-webui 设置页重构** —— 重试配置拆成独立设置页，原页
-  只留提示音音量（见 v0.20 实施，§11 之后不另开节）。
+- **v0.20 裁决**：本次不做模型超参功能，记录探索以备未来继续。粒度确认：
+  全局 > provider > provider/model 三级（maxTokens 不纳入——配置 provider 时即可设）。
+  顺带裁决：现有 better-webui 设置页重构（重试拆独立页，原页只留提示音音量，v0.20 实施）。
+- **v0.21 裁决（转向落地）**：按参考插件形态做一个**全局配置 + 输入框 UI** 的最小
+  版本（不做三级、不做设置页）：
+  - 参数：**temperature 可用**；**logprobs / penalty 显示为「暂不支持（等上游）」**
+    （方案 A；方案 B npm override 无效——adapter 不转发；方案 C 重写 adapter 太脆弱）。
+  - 语义：**每个新会话取默认值，会话内固定**（host 按会话 id 在首请求钉住，
+    `agent/disposed` 清理）。
+  - 输入框：`conversation.input.right` 常驻温度数字输入框（非滑杆）+ ▾ 面板
+    （启用开关 / logprobs/penalty 标注 / 持久化/热调 / 应用/恢复默认 / 双语）。
+  - **已实施**（`packages/modelparams`，v0.21，host + client）：见根 README。
+    三级解析与设置页一览表仍留待未来（届时也可走「设置中心」）。
+- **设置中心规则（v0.21 裁决，架构契约）**：`settings` 包是 better-webui 设置面板
+  的独立承载包；**只有需要被 better-webui 配置页配置的包**才 detect 它
+  （client 启动 `ctx.get` 判空）——装了经它注册配置页、由 settings 包管理；没装
+  用默认配置降级。不需要设置页的包（如 modelparams 输入框）不依赖。详见
+  monorepo.md §4。

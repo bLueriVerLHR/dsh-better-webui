@@ -22,6 +22,8 @@ const tests = [
   'packages/bashguard/tests/stall-guard.mjs',
   'packages/settings/tests/host.mjs',
   'packages/settings/tests/smoke.mjs',
+  'packages/modelparams/tests/host.mjs',
+  'packages/modelparams/tests/smoke.mjs',
   'tests/composition.mjs',
   'tests/client-envelope.mjs',
 ]

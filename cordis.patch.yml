@@ -24,3 +24,6 @@
 - insert:
     - id: better-webui-settings
       name: "@blueriverlhr/dsh-better-webui-settings"
+- insert:
+    - id: better-webui-modelparams
+      name: "@blueriverlhr/dsh-better-webui-modelparams"

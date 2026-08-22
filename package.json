@@ -1,13 +1,14 @@
 {
   "name": "@blueriverlhr/dsh-better-webui",
-  "description": "Web GUI enhancement plugin, monorepo meta bundle: aggregating six decoupled feature packages (archive-session management / custom-model reasoning provisioning / session activity chimes / keyless Exa web search / persistent-bash stall guard / configurable LLM retry policy + dedicated better-webui settings page). Installing this bundle mounts every feature; each feature is also installable on its own.",
-  "version": "0.20.1",
+  "description": "Web GUI enhancement plugin, monorepo meta bundle: aggregating seven decoupled feature packages (archive-session management / custom-model reasoning provisioning / session activity chimes / keyless Exa web search / persistent-bash stall guard / configurable LLM retry policy + dedicated better-webui settings page / model sampling parameters input-box control). Installing this bundle mounts every feature; each feature is also installable on its own.",
+  "version": "0.21.0",
   "private": true,
   "type": "module",
   "dependencies": {
     "@blueriverlhr/dsh-better-webui-archive": "file:./packages/archive",
     "@blueriverlhr/dsh-better-webui-bashguard": "file:./packages/bashguard",
     "@blueriverlhr/dsh-better-webui-chime": "file:./packages/chime",
+    "@blueriverlhr/dsh-better-webui-modelparams": "file:./packages/modelparams",
     "@blueriverlhr/dsh-better-webui-reasoning": "file:./packages/reasoning",
     "@blueriverlhr/dsh-better-webui-search": "file:./packages/search",
     "@blueriverlhr/dsh-better-webui-settings": "file:./packages/settings"

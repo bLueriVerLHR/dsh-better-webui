@@ -27,7 +27,7 @@
 
 ```
 dsh-better-webui/                        # 元包 @blueriverlhr/dsh-better-webui（Facade，无自身代码）
-  package.json                           # dependencies → 6 个小包（file:）
+  package.json                           # dependencies → 7 个小包（file:）
   cordis.patch.yml                       # 聚合 patch（GENERATED，勿手改）
   build.mjs                              # 组合构建：逐包 build + 重生成全部 patch
   scripts/
@@ -41,6 +41,7 @@ dsh-better-webui/                        # 元包 @blueriverlhr/dsh-better-webui
     search/        host                  Exa 搜索 provider（含 web 行覆盖）
     bashguard/     host                  持久化 bash 卡顿卫士（tools/execute 守卫）
     settings/      host + client         可配置重试策略（独立设置页）+ better-webui 设置页（提示音音量）（RPC /better-webui-settings）
+    modelparams/   host + client         模型采样参数控制（输入区温度输入框 + 面板；RPC /better-webui-modelparams）
   tests/
     support/                             共享 jsdom 测试骨架（client-harness / primitives-stub）
     composition.mjs                      patch 组合守卫
@@ -75,27 +76,36 @@ dsh-better-webui/                        # 元包 @blueriverlhr/dsh-better-webui
 | search | `lib/index.js`（provider 注册） | — | — | 可选 web | 1 行 + **web 行 searchProvider 覆盖** |
 | bashguard | `lib/index.js`（waterfall 守卫） | — | — | 可选 agentPresets/terminals | 1 行 |
 | settings | `lib/index.js`（RPC 通道 + 设置命名空间） | ✓ 两个设置页 | platform web | inject: connection/settings | 1 行 |
+| modelparams | `lib/index.js`（RPC + agent/request 拦截器） | ✓ 输入框 | platform web | inject: connection/settings | 1 行 |
 
 **跨包约束（不能破坏，否则 HMR/挂载异常）：**
 
 - **行 id 全局唯一**：`better-webui-archive` / `-reasoning` / `-chime` / `-search` /
-  `-bashguard` / `-settings`。不要重复使用。
+  `-bashguard` / `-settings` / `-modelparams`。不要重复使用。
 - **插槽 id 全局唯一**：archive 用 `better-webui-archive`（settings.section），
   chime 用 `better-webui-notify`（conversation.input.dock），settings 用
   `better-webui-settings` 与 `better-webui-retry`（两个 settings.section，v0.20
-  把重试拆成独立页）。
+  把重试拆成独立页），modelparams 用 `better-webui-modelparams`
+  （conversation.input.right）。
 - **locale NS 独立**：archive 用 `better-webui-archive`，chime 用 `better-webui-notify`，
-  settings 用 `better-webui-settings`（两个页共享同一 NS）。
+  settings 用 `better-webui-settings`（两个页共享同一 NS），modelparams 用
+  `better-webui-modelparams`。
 - **style 标签 id 独立**：archive 用 `better-webui-style`，chime 用
   `better-webui-notify-style`，settings 用 `better-webui-settings-style`
-  （两个页共享同一标签，HMR 按标签认领）。
+  （两个页共享同一标签，HMR 按标签认领），modelparams 用
+  `better-webui-modelparams-style`。
 - **RPC 通道唯一**：archive 用 `/better-webui`，settings 用 `/better-webui-settings`，
-  各自带 `WIRE_VERSION` 握手。
+  modelparams 用 `/better-webui-modelparams`，各自带 `WIRE_VERSION` 握手。
 - **localStorage 键保持稳定**：`better-webui:notify:enabled` / `:volume` 拆分后
   不变，老用户的设置不丢（chime 读、settings 页写，同一份键契约）。
 - **client 跨包值导入被禁**：client half 只能 require 平台静态表；不引用兄弟包。
   settings 页的提示音卡与 chime 通过**同键字符串**（非导入）共享，属稳定的跨包
   值契约。
+- **设置中心规则（v0.21 裁决）**：`settings` 包是 better-webui 设置面板的独立承载
+  包。**只有需要被 better-webui 配置页配置的包**才在 client 启动时 detect 它
+  （`ctx.get` 判空）——装了就通过它注册自己的配置页、由 settings 包管理；没装则
+  用默认配置、优雅降级。不需要设置页配置的包（如 modelparams 的输入框 UI）不依赖
+  它。此规则是给未来要用设置页的包准备的通用契约。
 
 ---
 

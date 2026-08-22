@@ -721,3 +721,35 @@ export function apply(ctx) {
 `.bwts-volume`，删除不再使用的 `.bwts-chimerowdesc` 样式）。所有键均中英双语
 （zh/en 各 26 键，键集一致，smoke 断言两行标题 + 无重复描述）。
 
+### 12.8 v0.21：模型采样参数（modelparams 包，全局温度 + 输入框）
+
+用户转向落地：按参考插件 `dsh-sampling-sliders` 形态做**全局配置 + 输入框 UI**
+的最小版本；logprobs/penalty 显示「暂不支持（等上游）」（方案 A）。设计详见
+design.md §11.5；这里记实现要点与坑。
+
+- **新包** `packages/modelparams`（host + client），行 id `better-webui-modelparams`，
+  设置命名空间 `better-webui-modelparams`（schema `{ enabled, temperature, mode }`），
+  RPC 通道 `/better-webui-modelparams`（ping / read / apply / reset，Command 表）。
+- **注入机制**：`agent/request` 拦截器（`ctx.on`，宿主级可收所有 agent）。返回
+  `{ ...config, temperature }` 即可注入——全链路已核实（§11.1）。**只经此钩子注入
+  temperature**；compaction / session-title 不走此钩子，不受影响。
+- **会话级固定**（用户语义：新会话默认、会话内固定）：`Map<sessionId, temp|undefined>`
+  按 `payload.agent.id` 键控。首请求（map miss）从 settings 解析 `enabled ? temp :
+  undefined` 并钉住；后续请求复用钉住值（全局改不影响进行中会话）；`agent/disposed`
+  清理。`applyTemperature` 只在 pinned 为数值时注入、从不剥离。
+- **hot 模式**：开机清残留（`mode==='hot'` → 重置默认），与参考插件一致。
+- **client**：`conversation.input.right` 常驻**数字输入框**（非滑杆）+ ▾ 面板
+  （启用开关 / logprobs·penalty 标注「暂不支持（等上游）」/ 持久化·热调 / 应用·恢复
+  默认 / 双语 20 键，键集一致）。`locale` 注册进 slot spec（occupant 收 `t`）。
+- **坑 1（RPC 双重包装）**：handler 表方法若返回 `{ ok, value }`，外层再包一次就
+  变成双层——表方法必须返回**裸值**，外层统一 `{ ok, value }` 包装（参照 settings 包）。
+- **坑 2（jsdom + React 18 number 输入事件）**：对 number 输入派发 `input`/keydown
+  会触发 React 的 value-change polyfill 崩溃（"reading 'tag'"）。smoke 改为：
+  输入框断言用 DOM 值 + 源码级接线检查（`onKeyDown: onKey` / `onBlur: commit`），
+  RPC 流用面板的 apply/reset 按钮驱动。
+- **client-envelope**：modelparams 的 apply 直接调用 `ctx.locale.bind`，envelope 的
+  mock locale 需补 `bind`（settings 包是懒调用所以没暴露这个依赖）。
+- **设置中心规则**（架构契约）：settings 包是设置面板承载包；只有需要被配置页配置
+  的包才 detect 它（`ctx.get` 判空，装了经它注册、没装降级）。modelparams 本轮
+  输入框 UI 不需要设置页，故不依赖。见 monorepo.md §4。
+

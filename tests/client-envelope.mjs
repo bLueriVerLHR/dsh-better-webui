@@ -37,6 +37,11 @@ const CLIENT_PACKAGES = [
     id: '@blueriverlhr/dsh-better-webui-settings',
     slots: ['settings.section'],
   },
+  {
+    dir: 'packages/modelparams',
+    id: '@blueriverlhr/dsh-better-webui-modelparams',
+    slots: ['conversation.input.right'],
+  },
 ]
 
 // React resolves from the installed dsh's node_modules — the same copies the
@@ -88,7 +93,7 @@ for (const pkg of CLIENT_PACKAGES) {
       inject: (name, register) => { registrations.push(name); return register() },
       register: () => () => {},
     },
-    locale: { register: () => () => {} },
+    locale: { register: () => () => {}, bind: () => (key) => key },
     effect: (dispose) => dispose,
   }
   exports.apply(ctx)

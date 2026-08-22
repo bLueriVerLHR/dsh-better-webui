@@ -1,6 +1,6 @@
 {
-  "name": "@blueriverlhr/dsh-better-webui-archive",
-  "description": "Web GUI archive-session management: view / restore / two-step permanent delete for sessions hidden by the native archive. Host RPC channel + settings page.",
+  "name": "@blueriverlhr/dsh-better-webui-modelparams",
+  "description": "Model sampling parameters control for the Web GUI: a global default temperature configurable from a compact input box in the composer tool row — each new session pins the default, the value stays fixed within a session. host agent/request interceptor + input-box client UI.",
   "version": "0.21.0",
   "private": true,
   "type": "module",
@@ -24,7 +24,8 @@
       "inject": [
         "@deepseek-ai/dsh-client-runtime",
         "@deepseek-ai/dsh-client-locale",
-        "@deepseek-ai/dsh-client-ui-slots"
+        "@deepseek-ai/dsh-client-ui-slots",
+        "@deepseek-ai/dsh-client-ui-conversation"
       ],
       "platform": "web"
     }

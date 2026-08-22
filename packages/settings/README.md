@@ -1,33 +1,19 @@
 # @blueriverlhr/dsh-better-webui-settings
 
-可配置 LLM 重试策略 + better-webui 专属设置页（host + client）：注册 RPC 通道
-`/better-webui-settings`（ping / read / apply）与「设置 → better-webui」页 +
-独立「设置 → 重试策略」页，页面集中管理 better-webui 的功能偏好，不混入 dsh
-自身设置分区。
+better-webui 专属设置页（纯客户端）：注册「设置 → better-webui」页
+（`settings.section`，id `better-webui-settings`，order 25，在「Agent 预设」与
+「重试策略」之间），集中管理 better-webui 的功能偏好，不混入 dsh 自身设置分区。
 
-页面内容（v0.20 起两个设置页）：
+v0.21 起重试策略已拆去独立包 `@blueriverlhr/dsh-better-webui-retry`
+（独立「重试策略」页，RPC `/better-webui-retry`）；本包**只保留会话提示音卡**。
 
-- **better-webui 页**（`settings.section`，order 25）：**只保留会话提示音卡**，
-  描述文本放在卡片大项下，卡内两行功能项——「**启动**」（开关，启用/停用提示音）
-  与「**调整音量**」（滑杆 0-100，0 静音）。纯客户端 localStorage（键
-  `better-webui:notify:enabled` / `:volume` 不变，老用户设置不丢），chime 包
-  的播放逻辑继续读这两个键。无需重启。
-- **重试策略页**（`settings.section`，order 26）：DSH 原生重试默认
-  `maxRetries: 2`（太少且不可调）。本包通过 `settings` 服务把用户选定的
-  **全局默认策略**（重试次数 + 指数退避初始/最大延迟 + 抖动）幂等地写入
-  `llm-pi-ai.providers.*.retryPolicy`，由 dsh 自带的 `dsh-llm-retry` 原样执行，
-  改 `settings.yaml` 即热加载（pi-ai 适配器实时读 `retryPolicy`，**无需重启**）。
-  - **不覆盖手写配置**：某个 provider 若已声明自己的 `retryPolicy`（与插件上次
-    写入的 `lastApplied` 标记不同），页面把它列为「手写配置」并跳过；
-    想单独设的 provider 手写 settings.yaml 即可。
-  - 策略 + `lastApplied` 标记持久化在 `better-webui.retry` 设置命名空间
-    （settings.yaml 里 `better-webui:` 一节），重启后依然生效。
-
-- 服务依赖（硬）：`connection`、`settings`
-- wire 版本：`WIRE_VERSION = 1`（host）与 `WIRE = 1`（client）必须一致
-- 两个设置页同源同包：共享同一 locale NS（`better-webui-settings`）与同一 style
-  标签（`better-webui-settings-style`）；重试页经 `/better-webui-settings` RPC
-  通道与宿主通信，better-webui 页纯客户端。
+- **会话提示音卡**：描述文本放在卡片大项下，卡内两行功能项——「**启动**」
+  （开关，启用/停用提示音）与「**调整音量**」（滑杆 0-100，0 静音）。
+  纯客户端 localStorage（键 `better-webui:notify:enabled` / `:volume` 不变，
+  老用户设置不丢），chime 包的播放逻辑继续读这两个键。无需重启。
+- 纯客户端，**无宿主数据、无 RPC**；host half 是空 apply（行需要包入口）。
+- 独立 locale NS（`better-webui-settings`）与独立 style 标签
+  （`better-webui-settings-style`）。
 
 独立安装：把 `@blueriverlhr/dsh-better-webui-settings` 加进 `dsh.profile.bundles`
 并声明依赖（见根 README「按需安装」）。更常见的做法是装根元包一起带上。

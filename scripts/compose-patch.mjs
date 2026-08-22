@@ -31,6 +31,7 @@ const FEATURES = [
   'search',
   'bashguard',
   'settings',
+  'retry',
   'modelparams',
 ]
 

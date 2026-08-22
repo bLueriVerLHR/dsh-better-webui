@@ -1,6 +1,6 @@
 {
-  "name": "@blueriverlhr/dsh-better-webui-settings",
-  "description": "Web GUI better-webui preference hub page: the session-chime switch and volume moved out of General settings. Pure client — localStorage, no host data (the configurable LLM retry policy lives in its own @blueriverlhr/dsh-better-webui-retry package).",
+  "name": "@blueriverlhr/dsh-better-webui-retry",
+  "description": "Web GUI configurable LLM retry policy: a dedicated 'Retry policy' settings page (max retries + exponential backoff) provisioned into every llm-pi-ai provider that does not declare its own. Host RPC channel + settings page.",
   "version": "0.21.0",
   "private": true,
   "type": "module",

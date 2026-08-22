@@ -15,14 +15,32 @@
 |---|---|
 | 运行中的服务 | `dsh web`，PID 由 `ps aux | grep "dsh web"` 找，监听 `http://127.0.0.1:3080` |
 | 服务实际 home | `DSH_HOME=/home/archie/.dsh`（注意：工作区里的 `.dsh-better/` 不是本服务的 home，是历史试验残留） |
-| 实际使用的 profile | `/home/archie/.dsh/profiles/web/`，`package.json` 的 `dsh.profile.bundles` 只有 `dsh-base` + `dsh-web-app` |
-| 插件安装方式 | `profiles/web/package.json` 的 `dependencies` 里 `"@blueriverlhr/dsh-better-webui": "link:/home/archie/forge/dsh-better-webui"`，再在 `bundles` 数组加上包名 |
+| 实际使用的 profile | `/home/archie/.dsh/profiles/web/`，`package.json` 的 `dsh.profile.bundles` 是 `dsh-base` + `dsh-web-app` + `dsh-coteam` + `dsh-better-webui`（v0.21 拆包后共 8 个小包） |
+| 插件安装方式 | 优先用 **dsh 指令**：`dsh plugin --profile web add file:/home/archie/forge/dsh-better-webui`（本地开发必须 `file:`，不要 `link:`；见下方操作经验） |
 | 插件源码 | `/home/archie/forge/dsh-better-webui`（本仓库） |
 | 插件回收站数据 | `$DSH_HOME/better-webui/trash/`（`trash.json` 索引 + 每会话一个目录） |
 | dsh 源码（只读参考） | `/home/archie/forge/deepseek-harness` |
 | 全局安装的 dsh | `/home/archie/.nvm/versions/node/v24.18.0/lib/node_modules/@deepseek-ai/dsh/`（运行的正是它，不是源码 checkout） |
 
-**关键点**：当前 3080 服务是全局安装的 dsh，profile 里通过 `link:` 依赖软链到本仓库。插件源码改动后需要**重启 `dsh web`**（node half 是启动时加载的），client bundle 改动则会被 stat-poll 热加载（见 §3）。
+**关键点**：当前 3080 服务是全局安装的 dsh，profile 里通过 `file:` 依赖把元包及 8 个小包装进 `profiles/web/node_modules`。插件源码改动后需要**重启 `dsh web`**（node half 是启动时加载的），client bundle 改动则会被 stat-poll 热加载（见 §3）。
+
+### 操作经验（2026-08）
+
+- **优先用 dsh 指令添加包**：直接编辑 `package.json` 容易漏掉 `bundles` / 依赖形状，统一走
+  ```sh
+  dsh plugin --profile web add <package>          # 已发布包，或
+  dsh plugin --profile web add file:/abs/path     # 本地开发（会装齐传递依赖）
+  dsh plugin --profile web remove <package>       # 卸载
+  ```
+  `dsh plugin` 会把剩余参数转发给 profile 目录里的 pnpm。
+- **`file:` 没有热加载，仓库改了要每次 rm/add**：本 profile 用 `file:`（不用 `link:`，
+  因为 `link:` 不装 8 个小包的传递依赖，v0.21 拆出 `better-webui-retry` 后启动即
+  `ERR_MODULE_NOT_FOUND`）。`file:` 的代价是 pnpm 把它钉进 lockfile——**仓库里新增
+  依赖/新小包/改 `package.json` 后，profile 的 `node_modules` 不会自动跟着变**，要
+  `dsh plugin --profile web remove @blueriverlhr/dsh-better-webui` 再 `add` 一次（或
+  在 profile 目录重跑 `CI=true pnpm install --no-frozen-lockfile`）才能拿到更新。
+  `lib/` 与 `cordis.patch.yml` 已提交进 git，所以**改完仓库记得先 `npm run build` 再
+  rm/add**，否则装的是旧产物。
 
 ### 重启命令模板
 

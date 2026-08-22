@@ -38,6 +38,11 @@ const CLIENT_PACKAGES = [
     slots: ['settings.section'],
   },
   {
+    dir: 'packages/retry',
+    id: '@blueriverlhr/dsh-better-webui-retry',
+    slots: ['settings.section'],
+  },
+  {
     dir: 'packages/modelparams',
     id: '@blueriverlhr/dsh-better-webui-modelparams',
     slots: ['conversation.input.left'],
@@ -45,9 +50,16 @@ const CLIENT_PACKAGES = [
 ]
 
 // React resolves from the installed dsh's node_modules — the same copies the
-// browser platform table seeds.
+// browser platform table seeds. If that install does not bundle react-dom
+// (e.g. a dsh that only carries react), fall back to this repo's own
+// node_modules, which pins the same react + react-dom 18.3.1.
 const platformRoot = '/home/archie/.nvm/versions/node/v24.18.0/lib/node_modules/@deepseek-ai/dsh/node_modules'
-const nodeRequire = createRequire(join(platformRoot, 'react', 'index.js'))
+let nodeRequire = createRequire(join(platformRoot, 'react', 'index.js'))
+try {
+  nodeRequire('react-dom')
+} catch {
+  nodeRequire = createRequire(join(root, 'node_modules/react/index.js'))
+}
 
 const failures = []
 const check = (ok, what) => { if (!ok) failures.push(what) }

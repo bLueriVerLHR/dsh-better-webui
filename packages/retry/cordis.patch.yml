@@ -1,0 +1,3 @@
+- insert:
+    - id: better-webui-retry
+      name: "@blueriverlhr/dsh-better-webui-retry"

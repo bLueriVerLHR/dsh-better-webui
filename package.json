@@ -1,6 +1,6 @@
 {
   "name": "@blueriverlhr/dsh-better-webui",
-  "description": "Web GUI enhancement plugin, monorepo meta bundle: aggregating seven decoupled feature packages (archive-session management / custom-model reasoning provisioning / session activity chimes / keyless Exa web search / persistent-bash stall guard / configurable LLM retry policy + dedicated better-webui settings page / model sampling parameters input-box control). Installing this bundle mounts every feature; each feature is also installable on its own.",
+  "description": "DeepSeek Harness Web GUI 增强插件 monorepo 元包：聚合多个解耦的功能小包。安装本包即挂上全部功能，每个功能也可单独安装（详见各包 README）。",
   "version": "0.21.0",
   "private": true,
   "type": "module",
@@ -10,6 +10,7 @@
     "@blueriverlhr/dsh-better-webui-chime": "file:./packages/chime",
     "@blueriverlhr/dsh-better-webui-modelparams": "file:./packages/modelparams",
     "@blueriverlhr/dsh-better-webui-reasoning": "file:./packages/reasoning",
+    "@blueriverlhr/dsh-better-webui-retry": "file:./packages/retry",
     "@blueriverlhr/dsh-better-webui-search": "file:./packages/search",
     "@blueriverlhr/dsh-better-webui-settings": "file:./packages/settings"
   },

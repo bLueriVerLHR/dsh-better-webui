@@ -2,22 +2,11 @@
  * better-webui settings browser half source. build-package wraps this file into
  * the `window.__ModuleLoader__.load` factory envelope emitted as lib/client.js.
  *
- * Two additive contributions — no native surface is replaced, both are
- * settings.section pages inside the sidebar nav (one feature package owns
- * both, so they share one locale NS and one style tag):
- *   - `settings.section` (id `better-webui-settings`, order 25): the better-webui
- *     preference hub page, ordered between the agent-preset page and the
- *     archive page. v0.20 起只保留会话提示音卡（重试策略已拆去独立页）。
- *   - `settings.section` (id `better-webui-retry`, order 26): 独立的「重试策略」
- *     设置页 —— 把原来的重试卡从 better-webui 页拆出来独占一页（它字段多、
- *     占面积大），与 better-webui 页同源同包，走同一个 `/better-webui-settings`
- *     RPC 通道。
- *   Both preferences live in the settings panel so nothing mixes with dsh's own
- *   settings sections.
- *
- * The retry page talks to the host through the `/better-webui-settings` RPC
- * channel (ping / read / apply); the chime card is pure client (localStorage),
- * exactly like the row it replaces.
+ * One additive contribution — a `settings.section` page inside the sidebar nav
+ * (id `better-webui-settings`, order 25): the better-webui preference hub page,
+ * ordered between the agent-preset page and the retry page. v0.21 起重试策略
+ * 已拆去独立包 better-webui-retry（RPC /better-webui-retry），本页只保留会话
+ * 提示音卡（纯客户端 localStorage，无需 RPC、无需宿主数据）。
  */
 
 var React = require('react')
@@ -27,39 +16,11 @@ var useEffect = React.useEffect
 var useRef = React.useRef
 
 var NS = 'better-webui-settings'
-/** Wire version this client expects; must match WIRE_VERSION in src/host.js. */
-var WIRE = 1
-/** RPC channel; must match CHANNEL in src/host.js. */
-var CHANNEL = '/better-webui-settings'
-
-/** DSH built-in retry policy (mirrors DEFAULT_RETRY_POLICY in src/host.js). */
-var DEFAULTS = { maxRetries: 2, initialDelayMs: 500, maxDelayMs: 10000, jitterRatio: 0.1 }
 
 var DICT = {
   zh: {
     'settings.title': 'Better WebUI',
     'settings.desc': '本页面集中管理 Better WebUI 的功能偏好，不混入 dsh 自身设置。',
-    'settings.stale': '宿主插件是旧版本，请重启 dsh web 后再操作',
-
-    'retry.pageTitle': '重试策略',
-    'retry.pageDesc': '模型请求失败后的重试次数与指数退避（写入 llm-pi-ai 各 provider）。默认仅 2 次，可在此调大。',
-    'retry.title': '重试策略',
-    'retry.desc': '模型请求失败后的重试次数与指数退避（写入 llm-pi-ai 各 provider）。默认仅 2 次，可在此调大。',
-    'retry.maxRetries': '重试次数',
-    'retry.initialDelayMs': '初始延迟 (ms)',
-    'retry.maxDelayMs': '最大延迟 (ms)',
-    'retry.jitterRatio': '抖动比例',
-    'retry.apply': '应用',
-    'retry.restore': '恢复默认',
-    'retry.applied': '已应用到 {n} 个 provider',
-    'retry.skipped': '已跳过 {n} 个手写配置',
-    'retry.providers': 'Provider 状态',
-    'retry.providerUnset': '未配置（将应用全局默认）',
-    'retry.providerSet': '已应用全局策略',
-    'retry.providerOurs': '沿用上次应用的策略',
-    'retry.providerCustom': '手写配置（不覆盖）',
-    'retry.failed': '应用失败',
-    'retry.noProviders': '没有可配置的 llm-pi-ai provider',
 
     'chime.title': '会话提示音',
     'chime.desc': 'Agent 等待输入或完成回合时播放提示音（音量 0 为静音）。',
@@ -69,27 +30,6 @@ var DICT = {
   en: {
     'settings.title': 'Better WebUI',
     'settings.desc': 'Preference hub for Better WebUI features, kept apart from dsh\'s own settings.',
-    'settings.stale': 'Host plugin is an old version — restart dsh web before acting',
-
-    'retry.pageTitle': 'Retry policy',
-    'retry.pageDesc': 'Retry count and exponential backoff for failed model requests (written into every llm-pi-ai provider). Default is only 2 — raise it here.',
-    'retry.title': 'Retry policy',
-    'retry.desc': 'Retry count and exponential backoff for failed model requests (written into every llm-pi-ai provider). Default is only 2 — raise it here.',
-    'retry.maxRetries': 'Max retries',
-    'retry.initialDelayMs': 'Initial delay (ms)',
-    'retry.maxDelayMs': 'Max delay (ms)',
-    'retry.jitterRatio': 'Jitter ratio',
-    'retry.apply': 'Apply',
-    'retry.restore': 'Restore defaults',
-    'retry.applied': 'Applied to {n} provider(s)',
-    'retry.skipped': 'Skipped {n} hand-written',
-    'retry.providers': 'Provider status',
-    'retry.providerUnset': 'unset (will get the global default)',
-    'retry.providerSet': 'global policy applied',
-    'retry.providerOurs': 'carrying the last-applied policy',
-    'retry.providerCustom': 'hand-written (not overwritten)',
-    'retry.failed': 'Apply failed',
-    'retry.noProviders': 'No llm-pi-ai providers to configure',
 
     'chime.title': 'Session chime',
     'chime.desc': 'Play a chime when the agent waits for input or finishes a turn (volume 0 mutes).',
@@ -99,44 +39,17 @@ var DICT = {
 }
 
 var CSS = [
-  /* settings section page — one nav page between agent-presets and archive
+  /* settings section page — one nav page between agent-presets and retry
      (mirrors the shipped section chrome: 18px title, 13px intro, 720px) */
   '.bwts-page{display:flex;flex-direction:column;gap:16px;max-width:720px;color:var(--dsw-alias-label-primary);}',
   '.bwts-title{margin:0;font-size:18px;font-weight:600;}',
   '.bwts-intro{margin:0;font-size:14px;line-height:22px;color:var(--dsw-alias-label-tertiary);}',
-  '.bwts-stale{padding:8px 12px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-caption);border:1px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-alias-bg-layer-2);}',
 
   /* feature card */
   '.bwts-card{display:flex;flex-direction:column;gap:12px;border:1px solid var(--dsw-alias-border-l2);border-radius:12px;background:var(--dsw-alias-bg-layer-3);padding:16px;}',
   '.bwts-cardhead{display:flex;flex-direction:column;gap:2px;}',
   '.bwts-cardtitle{font-size:15px;line-height:22px;font-weight:600;}',
   '.bwts-carddesc{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary);}',
-
-  /* number field grid */
-  '.bwts-grid{display:grid;grid-template-columns:repeat(2, minmax(0, 1fr));gap:12px;}',
-  '.bwts-field{display:flex;flex-direction:column;gap:4px;}',
-  '.bwts-label{font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary);}',
-  '.bwts-input{width:100%;box-sizing:border-box;padding:6px 10px;font-size:13px;line-height:20px;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l2);border-radius:8px;font-variant-numeric:tabular-nums;}',
-  '.bwts-input:focus{outline:1px solid var(--dsw-alias-state-business-primary);outline-offset:1px;}',
-  '.bwts-input:disabled{opacity:.5;cursor:default;}',
-
-  /* apply + restore buttons */
-  '.bwts-actions{display:flex;align-items:center;gap:8px;}',
-  '.bwts-btn{border:none;border-radius:8px;padding:6px 14px;font-size:13px;line-height:20px;cursor:pointer;color:#fff;background:var(--dsw-alias-state-business-primary);}',
-  '.bwts-btn:disabled{opacity:.5;cursor:default;}',
-  '.bwts-btn[data-ghost]{color:var(--dsw-alias-label-secondary);background:transparent;border:1px solid var(--dsw-alias-border-l2);}',
-  '.bwts-btn[data-ghost]:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);}',
-  '.bwts-result{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary);}',
-  '.bwts-result[data-error]{color:var(--dsw-alias-state-error-primary);}',
-
-  /* provider status list */
-  '.bwts-plist{display:flex;flex-direction:column;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;overflow:hidden;}',
-  '.bwts-prow{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--dsw-alias-border-l2);font-size:12px;line-height:18px;}',
-  '.bwts-prow:last-child{border-bottom:none;}',
-  '.bwts-proute{flex:1;min-width:0;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}',
-  '.bwts-pstatus{flex:none;color:var(--dsw-alias-label-tertiary);}',
-  '.bwts-pstatus[data-custom]{color:var(--dsw-alias-state-warning-primary);}',
-  '.bwts-pstatus[data-unset]{color:var(--dsw-alias-label-caption);}',
 
   /* chime card: two rows — enable switch + volume slider (description lives
      once under the card head, not repeated per row) */
@@ -190,150 +103,6 @@ function writeNotifyPref(key, value) {
   } catch (error) {
     // Not persisted; the current session still keeps the live state.
   }
-}
-
-/** Diagnostics for browser devtools when a host call fails. */
-function reportError(scope, error) {
-  var message = error instanceof Error ? error.message : String(error)
-  console.error('better-webui-settings: ' + scope + ' failed: ' + message)
-  return message
-}
-
-/**
- * Retry-policy card: four number fields (maxRetries, initialDelayMs,
- * maxDelayMs, jitterRatio), an Apply button that provisions the global policy
- * into every llm-pi-ai provider via the host RPC, a Restore-defaults button,
- * and a per-provider status list. The fields initialize from the host `read`
- * result; a stale host (wire mismatch) disables the controls.
- */
-function RetryCard(props) {
-  var t = props.t
-  var api = props.api
-
-  var policyState = useState(function () { return { ...DEFAULTS } })
-  var policy = policyState[0]
-  var setPolicy = policyState[1]
-  var providersState = useState([])
-  var providers = providersState[0]
-  var setProviders = providersState[1]
-  var staleState = useState(false)
-  var stale = staleState[0]
-  var setStale = staleState[1]
-  var busyState = useState(false)
-  var busy = busyState[0]
-  var setBusy = busyState[1]
-  var resultState = useState(null)
-  var result = resultState[0]
-  var setResult = resultState[1]
-
-  var load = function () {
-    api.ping().then(function (v) {
-      var hostStale = v !== WIRE
-      setStale(hostStale)
-      if (hostStale) return
-      return api.read().then(function (view) {
-        setPolicy({ ...DEFAULTS, ...view.policy })
-        setProviders(Array.isArray(view.providers) ? view.providers : [])
-      })
-    }, function (error) {
-      reportError('read', error)
-      setStale(true)
-    })
-  }
-
-  useEffect(function () { load() }, [])
-
-  var setField = function (key) {
-    return function (event) {
-      setPolicy({ ...policy, [key]: event.target.value })
-      if (result !== null) setResult(null)
-    }
-  }
-
-  var applyNow = function () {
-    setBusy(true)
-    setResult(null)
-    api.apply(policy).then(function (value) {
-      // Refresh providers + policy from the host (it may clamp values, and
-      // provider status changes unset → set after a successful apply).
-      return api.read().then(function (view) {
-        setBusy(false)
-        setPolicy({ ...DEFAULTS, ...view.policy })
-        setProviders(Array.isArray(view.providers) ? view.providers : [])
-        setResult({ kind: 'ok', applied: value.updated.length, skipped: value.skipped.length })
-      })
-    }, function (error) {
-      setBusy(false)
-      setResult({ kind: 'error', message: reportError('apply', error) })
-    })
-  }
-
-  var restoreNow = function () {
-    setPolicy({ ...DEFAULTS })
-    setResult(null)
-  }
-
-  var statusText = function (status) {
-    if (status === 'unset') return t('retry.providerUnset')
-    if (status === 'set') return t('retry.providerSet')
-    if (status === 'ours') return t('retry.providerOurs')
-    return t('retry.providerCustom')
-  }
-
-  return h('div', { className: 'bwts-card' },
-    h('div', { className: 'bwts-cardhead' },
-      h('div', { className: 'bwts-cardtitle' }, t('retry.title')),
-      h('div', { className: 'bwts-carddesc' }, t('retry.desc'))),
-    stale ? h('div', { className: 'bwts-stale' }, t('settings.stale')) : null,
-    h('div', { className: 'bwts-grid' },
-      h('div', { className: 'bwts-field' },
-        h('label', { className: 'bwts-label' }, t('retry.maxRetries')),
-        h('input', {
-          className: 'bwts-input', type: 'number', min: '0', step: '1',
-          value: policy.maxRetries, disabled: stale, onChange: setField('maxRetries'),
-        })),
-      h('div', { className: 'bwts-field' },
-        h('label', { className: 'bwts-label' }, t('retry.jitterRatio')),
-        h('input', {
-          className: 'bwts-input', type: 'number', min: '0', max: '1', step: '0.01',
-          value: policy.jitterRatio, disabled: stale, onChange: setField('jitterRatio'),
-        })),
-      h('div', { className: 'bwts-field' },
-        h('label', { className: 'bwts-label' }, t('retry.initialDelayMs')),
-        h('input', {
-          className: 'bwts-input', type: 'number', min: '0', step: '100',
-          value: policy.initialDelayMs, disabled: stale, onChange: setField('initialDelayMs'),
-        })),
-      h('div', { className: 'bwts-field' },
-        h('label', { className: 'bwts-label' }, t('retry.maxDelayMs')),
-        h('input', {
-          className: 'bwts-input', type: 'number', min: '0', step: '1000',
-          value: policy.maxDelayMs, disabled: stale, onChange: setField('maxDelayMs'),
-        }))),
-    h('div', { className: 'bwts-actions' },
-      h('button', { type: 'button', className: 'bwts-btn', disabled: stale || busy, onClick: applyNow }, t('retry.apply')),
-      h('button', { type: 'button', className: 'bwts-btn', 'data-ghost': 'true', disabled: stale, onClick: restoreNow }, t('retry.restore')),
-      result !== null ? h('span', {
-        className: 'bwts-result',
-        'data-error': result.kind === 'error' ? 'true' : undefined,
-      }, result.kind === 'ok'
-        ? (result.applied > 0 ? t('retry.applied', { n: result.applied }) : '')
-          + (result.skipped > 0 ? ' · ' + t('retry.skipped', { n: result.skipped }) : '')
-        : t('retry.failed') + ' · ' + result.message) : null),
-    h('div', { className: 'bwts-cardhead' },
-      h('div', { className: 'bwts-cardtitle', style: { fontSize: '13px' } }, t('retry.providers'))),
-    providers.length === 0
-      ? h('div', { className: 'bwts-result' }, t('retry.noProviders'))
-      : h('div', { className: 'bwts-plist' },
-        providers.map(function (p) {
-          return h('div', { key: p.route, className: 'bwts-prow' },
-            h('span', { className: 'bwts-proute', title: p.route }, p.route),
-            h('span', {
-              className: 'bwts-pstatus',
-              'data-custom': p.status === 'custom' ? 'true' : undefined,
-              'data-unset': p.status === 'unset' ? 'true' : undefined,
-            }, statusText(p.status)))
-        })))
 }
 
 /**
@@ -413,8 +182,8 @@ function ChimeCard(props) {
 
 /**
  * The better-webui settings page (id `better-webui-settings`, order 25): one
- * dedicated nav entry between agent-presets and archive. v0.20 起只渲染会话
- * 提示音卡（重试策略已拆去独立页 better-webui-retry），纯客户端、无需 RPC。
+ * dedicated nav entry between agent-presets and retry. v0.21 起只渲染会话提示音
+ * 卡（重试策略已拆去独立包 better-webui-retry），纯客户端、无需 RPC。
  */
 function BetterWebuiPage(props) {
   var t = props.t
@@ -425,24 +194,7 @@ function BetterWebuiPage(props) {
     h(ChimeCard, { t: t }))
 }
 
-/**
- * The dedicated retry-policy page (id `better-webui-retry`, order 26, right
- * after the better-webui page): hosts the retry card split out of the
- * better-webui page — it fields four numeric inputs + a provider status list,
- * which is too much real estate to share a page with the chime card. Talks to
- * the host through the same `/better-webui-settings` RPC channel.
- */
-function RetryPage(props) {
-  var api = props.api
-  var t = props.t
-
-  return h('div', { className: 'bwts-page' },
-    h('h2', { className: 'bwts-title' }, t('retry.pageTitle')),
-    h('p', { className: 'bwts-intro' }, t('retry.pageDesc')),
-    h(RetryCard, { t: t, api: api }))
-}
-
-exports.inject = ['slots', 'locale', 'connection']
+exports.inject = ['slots', 'locale']
 
 exports.apply = function apply(ctx) {
   if (typeof document !== 'undefined' && document.getElementById('better-webui-settings-style') === null) {
@@ -454,24 +206,6 @@ exports.apply = function apply(ctx) {
 
   ctx.effect(function () { return ctx.locale.register(NS, DICT) }, 'better-webui-settings: dictionaries')
 
-  var unwrap = function (method, payload) {
-    return ctx.connection.rpc.call(CHANNEL, method, payload).then(function (result) {
-      if (result === null || typeof result !== 'object' || result.ok !== true) {
-        var message = result !== null && typeof result === 'object'
-          && result.error !== undefined && result.error.message !== undefined
-          ? String(result.error.message)
-          : CHANNEL + '/' + method
-        throw new Error(message)
-      }
-      return result.value
-    })
-  }
-  var api = {
-    ping: function () { return unwrap('ping', {}).then(function (value) { return value.v }) },
-    read: function () { return unwrap('read', {}) },
-    apply: function (policy) { return unwrap('apply', { policy: policy }) },
-  }
-
   ctx.slots.inject('settings.section', function () {
     // better-webui 偏好页：只含会话提示音（order 25，agent-preset 之后）。
     ctx.slots.register({
@@ -481,14 +215,5 @@ exports.apply = function apply(ctx) {
       label: function () { return ctx.locale.bind(NS)('settings.title') },
       locale: NS,
     }, BetterWebuiPage)
-    // 重试策略独立页：紧接 better-webui 页之后（order 26），独占一页。
-    ctx.slots.register({
-      name: 'settings.section',
-      id: 'better-webui-retry',
-      order: 26,
-      label: function () { return ctx.locale.bind(NS)('retry.pageTitle') },
-      locale: NS,
-      inject: function () { return { api: api } },
-    }, RetryPage)
   })
 }

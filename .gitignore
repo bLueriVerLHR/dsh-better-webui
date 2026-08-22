@@ -5,3 +5,5 @@ node_modules/
 .npm-cache/
 # Research scratch (e.g. upstream deepseek-harness clone for patch specs)
 .tmp-check/
+# Upstream deepseek-harness source clone (read-only reference, not part of this repo)
+deepseek-harness/

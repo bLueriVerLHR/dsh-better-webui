@@ -413,6 +413,13 @@ top_p 正确、对 temperature 过严**——漏掉了 `agent/request` 这个官
     （启用开关 / logprobs/penalty 标注 / 持久化/热调 / 应用/恢复默认 / 双语）。
   - **已实施**（`packages/modelparams`，v0.21，host + client）：见根 README。
     三级解析与设置页一览表仍留待未来（届时也可走「设置中心」）。
+  - **v0.21 UX 迭代（用户反馈）**：① 工具行只留一个「超参配置」按钮（编辑都在
+    面板里）；② 温度「**留空 = 跟随模型默认，填写 = 覆盖**」，空输入用虚字
+    （placeholder）提示默认；③ **恢复默认 = 清空已保存配置**（温度回空）；④
+    **去掉逐参数说明**（高级设置，用户已知用途）——移除启用开关、hint/desc，
+    logprobs/penalty 只留「暂不支持」标签（原因放悬停 title）。schema 简化为
+    `{ temperature?, mode }`（temperature 空 = 不覆盖，写用 `settings.replace`
+    以便清空）。
 - **设置中心规则（v0.21 裁决，架构契约）**：`settings` 包是 better-webui 设置面板
   的独立承载包；**只有需要被 better-webui 配置页配置的包**才 detect 它
   （client 启动 `ctx.get` 判空）——装了经它注册配置页、由 settings 包管理；没装

@@ -2,8 +2,8 @@
  * jsdom integration test for the better-webui-modelparams client package
  * (lib/client.js) — a real DOM, the app's exact React version, and dispatched
  * events. It contributes ONE surface: a `conversation.input.right` occupant
- * (composer tool row) hosting a compact temperature INPUT BOX (not a slider)
- * plus a caret that opens the full-config panel.
+ * (composer tool row) hosting a single 「超参配置」button that opens the
+ * config panel. All editing happens inside the panel.
  *
  * Run: node tests/smoke.mjs   (after `npm run build`)
  */
@@ -24,16 +24,19 @@ const check = (ok, label) => {
 
 /* RPC stub: ping/read/apply/reset. */
 const rpcLog = []
-let cfg = { enabled: true, temperature: 0.7, mode: 'persist' }
+let cfg = { temperature: undefined, mode: 'persist' }
 const rpcResponse = async (method, payload) => {
   if (method === 'ping') return { ok: true, value: { v: 1 } }
   if (method === 'read') return { ok: true, value: { ...cfg } }
   if (method === 'apply') {
-    cfg = { ...cfg, ...payload }
+    cfg = {
+      temperature: payload.temperature === null || payload.temperature === undefined ? undefined : Number(payload.temperature),
+      mode: payload.mode === 'hot' ? 'hot' : 'persist',
+    }
     return { ok: true, value: { changed: true, config: { ...cfg } } }
   }
   if (method === 'reset') {
-    cfg = { enabled: false, temperature: 1.0, mode: 'persist' }
+    cfg = { temperature: undefined, mode: 'persist' }
     return { ok: true, value: { changed: true, config: { ...cfg } } }
   }
   return { ok: false, error: { message: 'unknown' } }
@@ -73,61 +76,62 @@ await new Promise((resolve) => {
   setTimeout(resolve, 60) // wait for the async read()
 })
 
-/* The compact control: an input box (number, not range) + caret. */
-const field = host.querySelector('.bwm-field')
-const tempInput = host.querySelector('.bwm-input')
-const caret = host.querySelector('.bwm-caret')
-check(field !== null && field.getAttribute('data-on') === 'true', '温度字段：启用态（data-on）')
-check(tempInput !== null && tempInput.type === 'number' && tempInput.value === '0.7', '温度用数字输入框（非滑杆），初始 0.7')
-check(host.querySelector('.bwm-input[type=range]') === null, '确认没有 range 滑杆')
-check(caret !== null && caret.getAttribute('aria-expanded') === 'false', 'caret 按钮收起状态')
+/* The compact control is a single button — no input box in the tool row. */
+const btn = host.querySelector('.bwm-btn')
+check(btn !== null && btn.textContent === '超参配置', '工具行是「超参配置」按钮')
+check(host.querySelector('.bwm-input') === null, '工具行没有输入框（编辑都在面板里）')
+check(btn.getAttribute('aria-expanded') === 'false', '按钮收起状态')
 check(rpcLog.some(([ch, m]) => ch === '/better-webui-modelparams' && m === 'read'), '挂载时 read 拉取配置')
 
-/* Typing + Enter / blur commits via the same RPC apply path the panel uses.
-   jsdom cannot drive keyboard events on this number input through React 18
-   (its value-change polyfill crashes), so we prove the commit wiring exists in
-   the bundle source and rely on the panel apply/reset tests for the RPC flow. */
-{
-  const source = readFileSync(packagePath('modelparams', 'lib', 'client.js'), 'utf8')
-  check(source.includes('onKeyDown: onKey') && source.includes('onBlur: commit')
-    && source.includes('api.apply'), '紧凑控件已接好 Enter/失焦提交与 apply 接线（源码级）')
-}
-
-/* Open the panel via caret. */
+/* Click the button → panel opens. */
 rpcLog.length = 0
-caret.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }))
+btn.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }))
 await new Promise((r) => setTimeout(r, 30))
-check(caret.getAttribute('aria-expanded') === 'true', '点击 caret 展开面板')
+check(btn.getAttribute('aria-expanded') === 'true', '点击按钮展开面板')
 check(host.querySelector('.bwm-pop') !== null, '面板渲染')
-check(host.querySelector('.bwm-pop-title').textContent === '模型采样参数', '面板标题')
+check(host.querySelector('.bwm-pop-title').textContent === '超参配置', '面板标题')
 
-/* Panel content: enable toggle, temperature input, unsupported rows, mode. */
-const enableCheck = host.querySelector('.bwm-check input[type=checkbox]')
-check(enableCheck !== null && enableCheck.checked === true, '启用开关：当前开启')
+/* Panel: temperature input is EMPTY (default) with a placeholder; no enable
+   checkbox; unsupported rows; mode toggle. */
+const tempInput = host.querySelector('.bwm-input')
+check(tempInput !== null && tempInput.type === 'number' && tempInput.value === ''
+  && tempInput.placeholder.includes('默认'), '温度输入框：默认空 + 虚字提示默认')
+check(host.querySelector('.bwm-check') === null, '无「启用」复选框（留空即默认）')
 check(host.querySelectorAll('.bwm-unsupported').length === 2, '两行暂不支持（logprobs / penalty）')
 const tags = [...host.querySelectorAll('.bwm-tag')].map((n) => n.textContent)
-check(tags.every((s) => s.includes('暂不支持')), 'logprobs / penalty 标注「暂不支持（等上游）」')
+check(tags.every((s) => s.includes('暂不支持')), 'logprobs / penalty 标注「暂不支持」')
 const modeButtons = [...host.querySelectorAll('.bwm-mode button')]
 check(modeButtons.length === 2 && modeButtons[0].textContent === '持久化' && modeButtons[1].textContent === '热调',
   '生效方式：持久化 / 热调两档')
-check(host.querySelector('.bwm-input[type=range]') === null, '面板内温度也是输入框（非滑杆）')
 
-/* Toggle enable off + apply → apply RPC carries enabled:false. React toggles
-   controlled checkboxes on click, so dispatch a real click. */
+/* Empty input + 应用 → apply RPC carries temperature:null (clear/back to
+   default). This is the reliable DOM-driven path (no number-input event).
+   The "fill = override" path is proven by the host test (apply 0.7 writes it)
+   and the wiring below. */
 rpcLog.length = 0
-enableCheck.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }))
 const applyBtn = [...host.querySelectorAll('.bwm-actions button')].find((b) => b.textContent === t('apply'))
 applyBtn.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }))
 await new Promise((r) => setTimeout(r, 60))
-check(rpcLog.some(([ch, m, p]) => ch === '/better-webui-modelparams' && m === 'apply' && p.enabled === false),
-  '关掉启用 + 应用 → apply RPC 带 enabled:false')
+check(rpcLog.some(([ch, m, p]) => ch === '/better-webui-modelparams' && m === 'apply' && p.temperature === null),
+  '空输入 + 应用 → apply RPC 带 temperature:null（清除/回默认）')
 
-/* Reset button → reset RPC. */
+/* Fill→override wiring is present in the bundle (jsdom cannot drive number-input
+   events through React 18's value polyfill): onChange updates state via setTemp,
+   apply reads cfg.temperature. */
+{
+  const source = readFileSync(packagePath('modelparams', 'lib', 'client.js'), 'utf8')
+  check(source.includes('onChange: setTemp') && source.includes('var raw = cfg.temperature')
+    && source.includes("raw.trim() === ''") && source.includes('api.apply({ temperature: temperature'),
+    '填写→覆盖接线存在（onChange→setTemp→apply 携带温度，源码级）')
+}
+
+/* Reset → reset RPC clears the stored override (input goes back to empty). */
 rpcLog.length = 0
 const resetBtn = [...host.querySelectorAll('.bwm-actions button')].find((b) => b.textContent === t('reset'))
 resetBtn.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }))
 await new Promise((r) => setTimeout(r, 60))
-check(rpcLog.some(([ch, m]) => ch === '/better-webui-modelparams' && m === 'reset'), '点「恢复默认」→ reset RPC')
+check(rpcLog.some(([ch, m]) => ch === '/better-webui-modelparams' && m === 'reset'), '点「恢复默认」→ reset RPC（清空配置）')
+check(tempInput.value === '', '恢复默认后温度输入框回到空（默认）')
 
 root.unmount()
 host.remove()

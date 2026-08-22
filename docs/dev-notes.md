@@ -741,12 +741,21 @@ design.md §11.5；这里记实现要点与坑。
 - **client**：`conversation.input.right` 常驻**数字输入框**（非滑杆）+ ▾ 面板
   （启用开关 / logprobs·penalty 标注「暂不支持（等上游）」/ 持久化·热调 / 应用·恢复
   默认 / 双语 20 键，键集一致）。`locale` 注册进 slot spec（occupant 收 `t`）。
+- **v0.21 UX 迭代**（用户反馈后重做）：① 工具行只留一个「超参配置」按钮（`.bwm-btn`，
+  有覆盖时 `data-active` 高亮），编辑全在面板；② 温度「留空 = 跟随模型默认，填写 =
+  覆盖」，空输入用 placeholder「默认（留空跟随模型）」虚字提示；③ **恢复默认 =
+  清空已保存配置**（温度回空）；④ 去掉逐参数说明与启用开关、hint/desc（高级设置）。
+  schema 从 `{ enabled, temperature, mode }` 简化为 `{ temperature?, mode }`，
+  写路径从 `mutate`（三字段）改为 **`settings.replace`**（`sectionOf` 只写有值键，
+  温度空时整个键消失 → replace 落到 schema 默认 undefined = 清空）。RPC apply
+  接受 `temperature: null`（清空）/ 数值（覆盖 0–2 夹取）。
 - **坑 1（RPC 双重包装）**：handler 表方法若返回 `{ ok, value }`，外层再包一次就
   变成双层——表方法必须返回**裸值**，外层统一 `{ ok, value }` 包装（参照 settings 包）。
 - **坑 2（jsdom + React 18 number 输入事件）**：对 number 输入派发 `input`/keydown
   会触发 React 的 value-change polyfill 崩溃（"reading 'tag'"）。smoke 改为：
-  输入框断言用 DOM 值 + 源码级接线检查（`onKeyDown: onKey` / `onBlur: commit`），
-  RPC 流用面板的 apply/reset 按钮驱动。
+  用真实按钮驱动可测路径（空输入 + 应用 → `temperature:null`、恢复默认 → reset），
+  填写→覆盖路径做源码级接线检查（`onChange: setTemp` / `raw.trim() === ''` /
+  `api.apply({ temperature: temperature`），RPC 值语义由 host 测试覆盖。
 - **client-envelope**：modelparams 的 apply 直接调用 `ctx.locale.bind`，envelope 的
   mock locale 需补 `bind`（settings 包是懒调用所以没暴露这个依赖）。
 - **设置中心规则**（架构契约）：settings 包是设置面板承载包；只有需要被配置页配置

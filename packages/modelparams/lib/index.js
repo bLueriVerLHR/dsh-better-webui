@@ -1,6 +1,7 @@
 /**
  * better-webui model sampling parameters host half: a global default
- * temperature configured from the composer input box, pinned per session.
+ * temperature configured from the composer "超参配置" panel, pinned per
+ * session.
  *
  * Mechanism (all official DSH extension points, zero dsh source changes):
  *
@@ -11,14 +12,19 @@
  *     it through `prepareCall` → canonicalHeader → frozen request → pi-ai
  *     adapter (`options.temperature`) → wire.
  *
+ *   - UX contract (user ruling): **empty = follow the model default, filled =
+ *     override**. The stored `temperature` is `undefined` when empty (no
+ *     override) and a number when the user typed an override. "Reset to
+ *     defaults" clears the stored override back to `undefined`.
+ *
  *   - Session-scoped pinning: the user's model is "a default value for each
  *     new session, fixed within a session". This half keeps a
  *     `Map<sessionId, temperature|undefined>` of the pinned value per live
  *     session. On the FIRST `agent/request` for a session the effective
- *     temperature is resolved from the settings (enabled ? global : undefined)
- *     and stored; every later request of that session reuses the stored value,
- *     so changing the input mid-session affects only NEW sessions. State is
- *     pruned on `agent/disposed`.
+ *     temperature is resolved from the settings and stored; every later
+ *     request of that session reuses the stored value, so changing the input
+ *     mid-session affects only NEW sessions. State is pruned on
+ *     `agent/disposed`.
  *
  *   - Persist vs hot mode: `mode: 'persist'` writes to settings.yaml and
  *     survives restarts; `mode: 'hot'` applies for the current run and the
@@ -37,15 +43,16 @@ export const CHANNEL = '/better-webui-modelparams'
 /** Wire version of this channel; the browser half refuses actions when it sees an older host. */
 export const WIRE_VERSION = 1
 
-/** The DSH/pi-ai default temperature when no override is configured. */
+/** The DSH/pi-ai default temperature shown as the empty-input placeholder. */
 export const DEFAULT_TEMPERATURE = 1.0
 
-/** The `better-webui-modelparams` namespace schema. */
+/**
+ * The `better-webui-modelparams` namespace schema. `temperature` is OPTIONAL:
+ * absent (or `undefined`) means "follow the model default" — the panel renders
+ * it as an empty input with a placeholder; a number means an override.
+ */
 export const Schema = z.object({
-  /** Whether to override the model's default temperature at all. */
-  enabled: z.boolean().default(false),
-  /** The global default temperature (0–2), used for each NEW session. */
-  temperature: z.number().min(0).max(2).default(DEFAULT_TEMPERATURE),
+  temperature: z.union([z.number().min(0).max(2), z.never()]).default(undefined),
   /** persist = survives restart; hot = current run only (cleared at boot). */
   mode: z.union(['persist', 'hot']).default('persist'),
 })
@@ -69,21 +76,18 @@ function failure(error) {
   }
 }
 
-/** Structural equality for the three scalar fields (apply-idempotency). */
+/** Structural equality for the config fields (apply-idempotency). */
 export function configEqual(a, b) {
   if (a === b) return true
   if (a === null || typeof a !== 'object' || b === null || typeof b !== 'object') return false
-  return a.enabled === b.enabled
-    && a.temperature === b.temperature
-    && a.mode === b.mode
+  return a.temperature === b.temperature && a.mode === b.mode
 }
 
-/** The persisted section shape as a plain config object (never undefined fields). */
+/** The persisted section shape as a plain config object (temperature may be undefined). */
 export function sectionToConfig(section) {
   const src = section !== null && typeof section === 'object' ? section : {}
   return {
-    enabled: src.enabled === true,
-    temperature: typeof src.temperature === 'number' ? src.temperature : DEFAULT_TEMPERATURE,
+    temperature: typeof src.temperature === 'number' ? src.temperature : undefined,
     mode: src.mode === 'hot' ? 'hot' : 'persist',
   }
 }
@@ -103,26 +107,34 @@ export function applyTemperature(pinned, config) {
   return { ...config, temperature: pinned }
 }
 
+/** Build the section object for `settings.replace` (drops the undefined temperature). */
+export function sectionOf(config) {
+  const out = {}
+  if (config.temperature !== undefined && config.temperature !== null) out.temperature = config.temperature
+  if (config.mode !== undefined) out.mode = config.mode
+  return out
+}
+
 /**
  * The `/better-webui-modelparams` channel handler table (Command pattern).
  * @param {import('@deepseek-ai/cordis').Context} ctx - host plugin context.
  * @returns {(endpoint: string, payload: unknown) => Promise<{ok: boolean}>} the channel handler.
  */
 export function makeHandler(ctx) {
-  const read = () => {
-    const section = ctx.settings.get(NS)
-    return sectionToConfig(section)
-  }
+  const read = () => sectionToConfig(ctx.settings.get(NS))
 
+  /** Normalize a wire config: empty/null temperature → undefined (follow default); number → clamp. */
   const clamp = (value) => {
     const src = value !== null && typeof value === 'object' ? value : {}
-    const temperature = Number(src.temperature)
-    if (!Number.isFinite(temperature)) throw new Error('apply: temperature must be a number')
-    return {
-      enabled: src.enabled === true,
-      temperature: Math.max(0, Math.min(2, temperature)),
-      mode: src.mode === 'hot' ? 'hot' : 'persist',
+    let temperature
+    if (src.temperature === undefined || src.temperature === null || src.temperature === '') {
+      temperature = undefined
+    } else {
+      const n = Number(src.temperature)
+      if (!Number.isFinite(n)) throw new Error('apply: temperature must be a number or empty')
+      temperature = Math.max(0, Math.min(2, n))
     }
+    return { temperature, mode: src.mode === 'hot' ? 'hot' : 'persist' }
   }
 
   const apply = async (payload, label) => {
@@ -132,12 +144,8 @@ export function makeHandler(ctx) {
       return { changed: false, config: next }
     }
     const descriptor = ctx.settings.describe().find((entry) => entry.ns === NS)
-    await ctx.settings.mutate(NS, [
-      { op: 'set', path: ['enabled'], value: next.enabled },
-      { op: 'set', path: ['temperature'], value: next.temperature },
-      { op: 'set', path: ['mode'], value: next.mode },
-    ], descriptor?.revision)
-    console.warn(`${where(label)}: applied ${next.mode} mode, enabled=${next.enabled}, temperature=${next.temperature}`)
+    await ctx.settings.replace(NS, sectionOf(next), descriptor?.revision)
+    console.warn(`${where(label)}: applied ${next.mode} mode, temperature=${next.temperature ?? 'default'}`)
     return { changed: true, config: next }
   }
 
@@ -145,7 +153,7 @@ export function makeHandler(ctx) {
     ping: () => ({ v: WIRE_VERSION }),
     read: () => read(),
     apply: (payload) => apply(payload, 'apply'),
-    reset: () => apply({ enabled: false, temperature: DEFAULT_TEMPERATURE, mode: 'persist' }, 'reset'),
+    reset: () => apply({ temperature: null, mode: 'persist' }, 'reset'),
   }
 
   return async (endpoint, payload) => {
@@ -187,15 +195,11 @@ export function apply(ctx) {
   const pinnedBySession = new Map()
 
   // Boot-clear: a leftover 'hot' value from a previous run applies for that
-  // run only; on startup reset it so it does not silently re-apply.
+  // run only; on startup clear it (temperature back to default/undefined).
   const boot = sectionToConfig(ctx.settings.get(NS))
   if (boot.mode === 'hot') {
     const descriptor = ctx.settings.describe().find((entry) => entry.ns === NS)
-    ctx.settings.mutate(NS, [
-      { op: 'set', path: ['enabled'], value: false },
-      { op: 'set', path: ['temperature'], value: DEFAULT_TEMPERATURE },
-      { op: 'set', path: ['mode'], value: 'persist' },
-    ], descriptor?.revision)
+    ctx.settings.replace(NS, { mode: 'persist' }, descriptor?.revision)
       .then(() => console.warn(`${where('boot')}: cleared leftover hot-mode sampling config`))
       .catch((error) => {
         console.warn(`${where('boot')}: failed to clear leftover hot mode: ${error instanceof Error ? error.message : String(error)}`)
@@ -212,10 +216,7 @@ export function apply(ctx) {
     if (sid !== undefined && pinnedBySession.has(sid)) {
       pinned = pinnedBySession.get(sid)
     } else {
-      const current = sectionToConfig(ctx.settings.get(NS))
-      pinned = current.enabled && typeof current.temperature === 'number'
-        ? current.temperature
-        : undefined
+      pinned = sectionToConfig(ctx.settings.get(NS)).temperature
       if (sid !== undefined) pinnedBySession.set(sid, pinned)
     }
     return applyTemperature(pinned, config)

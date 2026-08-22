@@ -1,19 +1,18 @@
 /**
  * Host-half test for the model sampling parameters package:
- *   - pure helpers: sectionToConfig / configEqual / applyTemperature;
- *   - the RPC handler (read / apply / reset, clamp, idempotency) over a mocked
- *     settings service;
+ *   - pure helpers: sectionToConfig / configEqual / applyTemperature / sectionOf;
+ *   - the RPC handler (read / apply / reset, empty→default, clamp, idempotency)
+ *     over a mocked settings service using replace;
  *   - the agent/request interceptor with session-scoped pinning: a new session
  *     resolves the effective temperature on its first request, keeps it fixed
- *     within the session, and a later session re-resolves; disabled means "no
- *     temperature override"; a leftover hot mode is cleared at boot.
+ *     within the session, and a later session re-resolves; empty temperature
+ *     means "no override"; a leftover hot mode is cleared at boot.
  *
  * Run: node tests/host.mjs
  */
-import assert from 'node:assert/strict'
 import {
-  sectionToConfig, configEqual, applyTemperature, DEFAULT_TEMPERATURE,
-  makeHandler, apply, NS, CHANNEL,
+  sectionToConfig, configEqual, applyTemperature, sectionOf, DEFAULT_TEMPERATURE,
+  apply, NS,
 } from '../src/host.js'
 
 const results = []
@@ -21,14 +20,19 @@ const check = (ok, label) => { results.push([ok, label]); console.log(`  ${ok ? 
 
 /* 0. pure helpers. */
 {
-  check(sectionToConfig(undefined).enabled === false
-    && sectionToConfig(undefined).temperature === DEFAULT_TEMPERATURE
-    && sectionToConfig(undefined).mode === 'persist', 'sectionToConfig：空 → 默认（禁用 / 1.0 / persist）')
-  check(sectionToConfig({ enabled: true, temperature: 0.7, mode: 'hot' }).temperature === 0.7
-    && sectionToConfig({ enabled: true, temperature: 0.7, mode: 'hot' }).mode === 'hot', 'sectionToConfig：保留有效字段')
-  check(sectionToConfig({ enabled: true, temperature: 9 }).temperature === 9, 'sectionToConfig：不夹取（夹取在 apply 层）')
-  check(configEqual(sectionToConfig({ enabled: true, temperature: 0.7, mode: 'hot' }), { enabled: true, temperature: 0.7, mode: 'hot' }) === true, 'configEqual：相同 → true')
-  check(configEqual({ enabled: true, temperature: 0.7, mode: 'hot' }, { enabled: true, temperature: 0.8, mode: 'hot' }) === false, 'configEqual：温度不同 → false')
+  const empty = sectionToConfig(undefined)
+  check(empty.temperature === undefined && empty.mode === 'persist', 'sectionToConfig：空 → 温度 undefined（跟随默认）/ persist')
+  check(sectionToConfig({ temperature: 0.7, mode: 'hot' }).temperature === 0.7
+    && sectionToConfig({ temperature: 0.7, mode: 'hot' }).mode === 'hot', 'sectionToConfig：保留有效字段')
+  check(sectionToConfig({ temperature: 9 }).temperature === 9, 'sectionToConfig：不夹取（夹取在 apply 层）')
+  check(configEqual(sectionToConfig({ temperature: 0.7, mode: 'hot' }), { temperature: 0.7, mode: 'hot' }) === true, 'configEqual：相同 → true')
+  check(configEqual({ temperature: 0.7, mode: 'hot' }, { temperature: 0.8, mode: 'hot' }) === false, 'configEqual：温度不同 → false')
+  check(configEqual({ temperature: undefined, mode: 'persist' }, { temperature: 0.7, mode: 'persist' }) === false, 'configEqual：空 vs 有值 → false')
+  const of = sectionOf({ temperature: 0.7, mode: 'hot' })
+  check(of.temperature === 0.7 && of.mode === 'hot', 'sectionOf：保留有值字段')
+  check(sectionOf({ temperature: undefined, mode: 'persist' }).temperature === undefined
+    && Object.keys(sectionOf({ temperature: undefined, mode: 'persist' })).join(',') === 'mode',
+    'sectionOf：温度空 → 不写 temperature 键（replace 会清掉）')
   check(applyTemperature(undefined, { provider: 'p', model: 'm' }).temperature === undefined, 'applyTemperature：pinned undefined → 原样（跟随默认）')
   const applied = applyTemperature(0.7, { provider: 'p', model: 'm' })
   check(applied.temperature === 0.7 && applied.provider === 'p', 'applyTemperature：pinned 数值 → 注入 temperature')
@@ -37,20 +41,8 @@ const check = (ok, label) => { results.push([ok, label]); console.log(`  ${ok ? 
     'applyTemperature：已相同 → 返回原对象（不复制）')
 }
 
-/* --- settings-capable mock ctx --- */
-const writes = []
-function applyOps(section, ops) {
-  for (const op of ops) {
-    let node = section
-    for (let i = 0; i < op.path.length - 1; i++) {
-      const key = op.path[i]
-      if (node[key] === null || typeof node[key] !== 'object') node[key] = {}
-      node = node[key]
-    }
-    if (op.op === 'set') node[op.path[op.path.length - 1]] = op.value
-  }
-  return section
-}
+/* --- settings-capable mock ctx (replace-based) --- */
+const writes = [] // { ns, section, revision } for every settings.replace call
 
 /** Build a mock ctx around a mutable settings section; captures RPC + events. */
 function makeCtx({ user }) {
@@ -62,9 +54,9 @@ function makeCtx({ user }) {
     register: () => ({ /* auto-disposed with fiber */ }),
     get: (ns) => current === undefined ? undefined : JSON.parse(JSON.stringify(current)),
     describe: () => [{ ns: NS, user: current, revision }],
-    mutate: async (ns, ops, rev) => {
-      writes.push({ ns, ops, revision: rev })
-      current = applyOps({ ...(current ?? {}) }, ops)
+    replace: async (ns, section, rev) => {
+      writes.push({ ns, section, revision: rev })
+      current = JSON.parse(JSON.stringify(section))
       revision += 1
     },
   }
@@ -79,7 +71,7 @@ function makeCtx({ user }) {
   return { ctx, getRpc: () => rpcHandler, events }
 }
 
-/* 1. RPC handler: defaults, apply (persist), reset, clamp. */
+/* 1. RPC handler: defaults, apply (persist), empty→default, reset, clamp. */
 writes.length = 0
 {
   const { ctx, getRpc } = makeCtx({ user: undefined })
@@ -91,37 +83,41 @@ writes.length = 0
   check(ping.ok === true && ping.value.v === 1, 'ping 返回 wire 版本')
 
   const read0 = await rpc('read', {})
-  check(read0.ok === true && read0.value.enabled === false
-    && read0.value.temperature === DEFAULT_TEMPERATURE && read0.value.mode === 'persist',
-    'read：空命名空间 → 默认配置')
+  check(read0.ok === true && read0.value.temperature === undefined && read0.value.mode === 'persist',
+    'read：空命名空间 → 温度空（默认）/ persist')
 
-  const applyRes = await rpc('apply', { enabled: true, temperature: 0.7, mode: 'persist' })
+  const applyRes = await rpc('apply', { temperature: 0.7, mode: 'persist' })
   check(applyRes.ok === true && applyRes.value.changed === true
-    && applyRes.value.config.temperature === 0.7, 'apply：写入启用 + 温度 0.7')
-  check(writes.length === 1 && writes[0].ns === NS && writes[0].ops.length === 3,
-    'apply：一次 mutate 三字段（enabled/temperature/mode）')
+    && applyRes.value.config.temperature === 0.7, 'apply：填写 0.7 → 覆盖')
+  check(writes.length === 1 && writes[0].ns === NS && writes[0].section.temperature === 0.7
+    && writes[0].section.mode === 'persist', 'apply：一次 replace 写入 temperature/mode')
 
   const read1 = await rpc('read', {})
-  check(read1.value.enabled === true && read1.value.temperature === 0.7, 'apply 后 read 反映新值')
+  check(read1.value.temperature === 0.7, 'apply 后 read 反映新值')
 
-  const applySame = await rpc('apply', { enabled: true, temperature: 0.7, mode: 'persist' })
+  const applySame = await rpc('apply', { temperature: 0.7, mode: 'persist' })
   check(applySame.value.changed === false && writes.length === 1, 'apply：相同配置 → 幂等不写')
 
-  const clamped = await rpc('apply', { enabled: true, temperature: 5, mode: 'persist' })
+  const cleared = await rpc('apply', { temperature: null, mode: 'persist' })
+  check(cleared.ok === true && cleared.value.config.temperature === undefined
+    && writes[writes.length - 1].section.temperature === undefined,
+    'apply：温度传空 → 清除覆盖（回默认）')
+
+  const clamped = await rpc('apply', { temperature: 5, mode: 'persist' })
   check(clamped.value.config.temperature === 2, 'apply：超范围温度被夹取到 2')
 
-  const bad = await rpc('apply', { enabled: true, temperature: 'abc' })
+  const bad = await rpc('apply', { temperature: 'abc' })
   check(bad.ok === false, 'apply：非数值温度 → 报错')
 
   const resetRes = await rpc('reset', {})
-  check(resetRes.ok === true && resetRes.value.config.enabled === false
-    && resetRes.value.config.temperature === DEFAULT_TEMPERATURE, 'reset：回到默认（禁用 / 1.0 / persist）')
+  check(resetRes.ok === true && resetRes.value.config.temperature === undefined
+    && resetRes.value.config.mode === 'persist', 'reset：清空已保存配置（温度空 / persist）')
 }
 
 /* 2. interceptor: session pinning + fixed within session + new session re-pins. */
 writes.length = 0
 {
-  const { ctx, events } = makeCtx({ user: { enabled: true, temperature: 0.6, mode: 'persist' } })
+  const { ctx, events } = makeCtx({ user: { temperature: 0.6, mode: 'persist' } })
   apply(ctx)
   const request = events['agent/request']
   const disposed = events['agent/disposed']
@@ -138,11 +134,7 @@ writes.length = 0
 
   // Even if the global config changes mid-session, session A keeps 0.6
   // (fixed within a session) because the pin was captured on first request.
-  ctx.settings.mutate(NS, [
-    { op: 'set', path: ['enabled'], value: true },
-    { op: 'set', path: ['temperature'], value: 0.9 },
-    { op: 'set', path: ['mode'], value: 'persist' },
-  ], 1)
+  ctx.settings.replace(NS, { temperature: 0.9, mode: 'persist' }, 1)
   const a2 = await request({ agent: { id: 'a' } }, nextFor(0.6))
   check(a2.temperature === 0.6, '会话 A 后续请求：全局已改仍保持固定 0.6')
 
@@ -156,25 +148,26 @@ writes.length = 0
   check(b2.temperature === 0.9, '会话 B 销毁后复用 id：重新解析')
 }
 
-/* 3. disabled → no temperature override; passthrough keeps machine config. */
+/* 3. empty (no override) → no temperature; passthrough keeps machine config. */
 {
-  const { ctx, events } = makeCtx({ user: { enabled: false, temperature: 0.6, mode: 'persist' } })
+  const { ctx, events } = makeCtx({ user: { mode: 'persist' } })
   apply(ctx)
   const request = events['agent/request']
   const config = await request({ agent: { id: 'c' } }, async () => ({ provider: 'p', model: 'm' }))
-  check(config.temperature === undefined && config.provider === 'p', 'enabled=false → 不注入温度（跟随模型默认）')
+  check(config.temperature === undefined && config.provider === 'p', '温度空 → 不注入（跟随模型默认）')
 }
 
 /* 4. boot hot-clear: a persisted hot mode is cleared to defaults. */
 writes.length = 0
 {
-  const { ctx } = makeCtx({ user: { enabled: true, temperature: 0.4, mode: 'hot' } })
+  const { ctx } = makeCtx({ user: { temperature: 0.4, mode: 'hot' } })
   apply(ctx)
-  // apply() boots synchronously; the hot-clear mutate is async — await a tick.
+  // apply() boots synchronously; the hot-clear replace is async — await a tick.
   await new Promise((r) => setTimeout(r, 0))
   const hotWrites = writes.filter((w) => w.ns === NS)
-  check(hotWrites.length >= 1 && hotWrites[0].ops.some((o) => o.path.join('.') === 'mode' && o.value === 'persist'),
-    'boot：hot 残留被清除为 persist 默认')
+  check(hotWrites.length >= 1 && hotWrites[0].section.mode === 'persist'
+    && hotWrites[0].section.temperature === undefined,
+    'boot：hot 残留被清除（温度回空 / persist）')
 }
 
 console.log(results.some(([ok]) => !ok) ? `\n${results.filter(([ok]) => !ok).length} 项失败` : '\n全部通过 ✓')

@@ -187,17 +187,18 @@ better-webui 页，含重试卡），集中管理 better-webui 的功能偏好�
 
 ### 模型采样参数控制（modelparams）
 
-输入区（composer 工具行、发送键前）的**常驻温度输入框**（数字输入，不是滑杆）＋
-▾ 弹出面板，配置**全局默认温度**。语义：**每个新会话取默认值，会话内固定**。
+输入区（composer 工具行、发送键前）的**「超参配置」按钮**，点击弹出面板配置
+**全局默认温度**。语义：**每个新会话取默认值，会话内固定**。
 
-- **temperature**：可用。经官方 `agent/request` 钩子注入（新会话首请求解析
-  `启用 ? 全局温度 : 跟随模型默认`，按会话钉住并保持固定；`agent/disposed`
-  清理会话态）。零 dsh 源码修改。
-- **logprobs / penalty**：面板中显示「**暂不支持（等上游）**」——harness 词汇表
-  与两个 adapter 均无这些字段，唯一出路是 pi-ai 0.84 的 `samplingParams` 透传
-  （等 dsh-llm-pi-ai 升级采用，详见 [docs/design.md](docs/design.md) §11）。
+- **temperature**：可用。**数值留空 = 跟随模型默认，填写 = 覆盖**（空输入以虚字
+  提示默认）。经官方 `agent/request` 钩子注入（新会话首请求解析后按会话钉住并
+  保持固定；`agent/disposed` 清理会话态）。零 dsh 源码修改。
+- **logprobs / penalty**：面板中显示「**暂不支持**」——harness 词汇表与两个
+  adapter 均无这些字段，唯一出路是 pi-ai 0.84 的 `samplingParams` 透传（等
+  dsh-llm-pi-ai 升级采用，详见 [docs/design.md](docs/design.md) §11）。
+- **恢复默认**：**清空已保存的覆盖配置**（温度回到留空/默认）。
 - **生效方式**：持久化（写入 settings.yaml，重启仍在）或热调（本次运行生效，
-  开机清除残留）；「恢复默认」一键回到「禁用 / 1.0 / 持久化」。
+  开机清除残留）。
 - **双语**：zh / en 两套文案。
 - 宿主改动（RPC + 设置命名空间）→ **重启 `dsh web`**；客户端改动刷新浏览器即可。
 

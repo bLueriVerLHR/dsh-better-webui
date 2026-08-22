@@ -1,8 +1,9 @@
 # @blueriverlhr/dsh-better-webui-modelparams
 
-模型采样参数控制（host + client）：输入区（`conversation.input.right`，composer
-工具行、发送键前）放一个**「超参配置」图标按钮**（滑杆/调谐图标，hover 与
-无障碍名称为「超参配置」），点击弹出面板编辑。语义：**每个新
+模型采样参数控制（host + client）：输入区（`conversation.input.left`，composer
+工具行**左侧**、+命令/访问模式/计划之后）放一个**「超参配置」图标按钮**（滑杆/
+调谐图标，幽灵胶囊样式对齐「上下文已用」按钮；hover 与无障碍名称为「超参配置」），
+点击弹出面板编辑。语义：**每个新
 会话取默认值，会话内固定**。
 
 ## 功能
@@ -28,9 +29,9 @@
   `/better-webui-modelparams`（ping / read / apply / reset，写用 `replace`
   清空）+ `agent/request` 拦截器（会话级钉住温度）+ `agent/disposed` 清理 +
   boot 热调残留清除。
-- Client（`src/client.bundle.js`）：`conversation.input.right` 单个「超参配置」
-  按钮 + 弹层面板（温度输入框 / 暂不支持行 / 持久化·热调 / 应用·恢复默认），
-  经 RPC 与宿主通信。
+- Client（`src/client.bundle.js`）：`conversation.input.left` 单个「超参配置」
+  幽灵胶囊图标按钮 + 弹层面板（温度输入框 / 暂不支持行 / 持久化·热调 / 应用·恢复
+  默认），经 RPC 与宿主通信。
 
 - 服务依赖（硬）：`connection`、`settings`
 - wire 版本：`WIRE_VERSION = 1`（host）与 `WIRE = 1`（client）必须一致

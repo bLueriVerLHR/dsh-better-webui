@@ -761,6 +761,13 @@ design.md §11.5；这里记实现要点与坑。
   （`SlidersIcon`，三行带旋钮的 SVG）；`.bwm-btn` 改为 32×32 图标按钮，
   hover 与无障碍名称（`aria-label`）仍用 `ctl.title` / `ctl.button` 文案。
   smoke 断言按钮含 `svg` 且 `aria-label === '超参配置'`。
+- **v0.21 UX 四次微调（用户要求，位置+样式）**：① 槽位从 `conversation.input.right`
+  移到 **`conversation.input.left`**（左侧，+命令/访问模式/计划之后——composer 左侧
+  原生按钮硬编码，槽位只能追加其后，无法精确插到 + 和访问模式之间，已与用户确认
+  此位置）；② 样式对齐原生「上下文已用」触发按钮：28×28、`background:0 0`（透明）、
+  `border:none`、`border-radius:999px`、`color:label-secondary`、hover
+  `interactive-bg-hover`（幽灵胶囊，和输入框背景融为一体）；`data-active` 高亮只改
+  color（brand-primary）。client-envelope 槽位期望同步改 left。
 - **坑 1（RPC 双重包装）**：handler 表方法若返回 `{ ok, value }`，外层再包一次就
   变成双层——表方法必须返回**裸值**，外层统一 `{ ok, value }` 包装（参照 settings 包）。
 - **坑 2（jsdom + React 18 number 输入事件）**：对 number 输入派发 `input`/keydown

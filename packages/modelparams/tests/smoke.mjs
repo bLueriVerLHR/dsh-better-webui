@@ -1,9 +1,10 @@
 /**
  * jsdom integration test for the better-webui-modelparams client package
  * (lib/client.js) — a real DOM, the app's exact React version, and dispatched
- * events. It contributes ONE surface: a `conversation.input.right` occupant
- * (composer tool row) hosting a single 「超参配置」button that opens the
- * config panel. All editing happens inside the panel.
+ * events. It contributes ONE surface: a `conversation.input.left` occupant
+ * (composer tool row, after the resident +/access/plan chrome) hosting a single
+ * 「超参配置」ghost-pill icon button that opens the config panel. All editing
+ * happens inside the panel.
  *
  * Run: node tests/smoke.mjs   (after `npm run build`)
  */
@@ -60,11 +61,11 @@ const mockCtx = {
 }
 plugin.apply(mockCtx)
 
-const inputReg = registrations.find((r) => r.spec.name === 'conversation.input.right')
-check(registrations.length === 1, '贡献数量精确为一个（只注册一个 input.right 槽位）')
+const inputReg = registrations.find((r) => r.spec.name === 'conversation.input.left')
+check(registrations.length === 1, '贡献数量精确为一个（只注册一个 input.left 槽位）')
 check(inputReg !== undefined && inputReg.spec.id === 'better-webui-modelparams'
   && inputReg.spec.order === 0 && inputReg.spec.locale === 'better-webui-modelparams',
-  '注册 conversation.input.right（id better-webui-modelparams，order 0，locale 绑定）')
+  '注册 conversation.input.left（id better-webui-modelparams，order 0，locale 绑定）')
 check(dom.window.document.getElementById('better-webui-modelparams-style') !== null, '样式表已注入 <head>')
 
 /* Render the control. */
@@ -82,6 +83,11 @@ await new Promise((resolve) => {
 const btn = host.querySelector('.bwm-btn')
 check(btn !== null && btn.querySelector('svg') !== null, '工具行是图标按钮（滑杆/调谐图标）')
 check(btn.getAttribute('aria-label') === '超参配置', '图标按钮的 aria-label 为「超参配置」')
+{
+  const source = readFileSync(packagePath('modelparams', 'lib', 'client.js'), 'utf8')
+  check(source.includes('border-radius:999px') && source.includes('background:0 0')
+    && source.includes('border:none'), '幽灵胶囊样式（透明背景/无边框/圆角，对齐上下文已用按钮）')
+}
 check(host.querySelector('.bwm-input') === null, '工具行没有输入框（编辑都在面板里）')
 check(btn.getAttribute('aria-expanded') === 'false', '按钮收起状态')
 check(rpcLog.some(([ch, m]) => ch === '/better-webui-modelparams' && m === 'read'), '挂载时 read 拉取配置')

@@ -8,9 +8,10 @@ Object.defineProperty(exports, Symbol.toStringTag, { value: 'Module' });
  * emitted as lib/client.js.
  *
  * One additive contribution — no native surface is replaced:
- * `conversation.input.right` (the right end of the composer tool row, before
- * the send button): a single **「超参配置」button**. All editing happens in the
- * popover panel it opens.
+ * `conversation.input.left` (the left end of the composer tool row, after the
+ * resident + / access-mode / plan chrome): a single **「超参配置」icon button**
+ * styled as a ghost pill matching the native context-used trigger. All editing
+ * happens in the popover panel it opens.
  *
  * Panel UX (user ruling):
  *   - temperature: **empty = the system-determined default (shown as the
@@ -92,10 +93,11 @@ var DICT = {
 }
 
 var CSS = [
-  /* tool-row icon button */
-  '.bwm-btn{display:inline-flex;align-items:center;justify-content:center;flex:none;width:32px;height:32px;padding:0;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);cursor:pointer;}',
+  /* tool-row icon button — matches the native context-used trigger: ghost
+     pill, transparent background, no border, round, secondary color */
+  '.bwm-btn{width:28px;height:28px;color:var(--dsw-alias-label-secondary);cursor:pointer;background:0 0;border:none;border-radius:999px;flex:none;place-items:center;display:grid;padding:0;}',
   '.bwm-btn:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);}',
-  '.bwm-btn[data-active=true]{border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-brand-primary);}',
+  '.bwm-btn[data-active=true]{color:var(--dsw-alias-brand-primary);}',
   '.bwm-backdrop{position:fixed;inset:0;z-index:9990;background:transparent;}',
 
   /* popover panel */
@@ -373,9 +375,9 @@ exports.apply = function apply(ctx) {
     reset: function () { return unwrap('reset', {}) },
   }
 
-  ctx.slots.inject('conversation.input.right', function () {
+  ctx.slots.inject('conversation.input.left', function () {
     return ctx.slots.register({
-      name: 'conversation.input.right',
+      name: 'conversation.input.left',
       id: 'better-webui-modelparams',
       order: 0,
       locale: NS,

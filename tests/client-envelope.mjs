@@ -40,7 +40,7 @@ const CLIENT_PACKAGES = [
   {
     dir: 'packages/modelparams',
     id: '@blueriverlhr/dsh-better-webui-modelparams',
-    slots: ['conversation.input.right'],
+    slots: ['conversation.input.left'],
   },
 ]
 

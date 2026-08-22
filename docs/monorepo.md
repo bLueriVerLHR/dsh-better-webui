@@ -86,7 +86,7 @@ dsh-better-webui/                        # 元包 @blueriverlhr/dsh-better-webui
   chime 用 `better-webui-notify`（conversation.input.dock），settings 用
   `better-webui-settings` 与 `better-webui-retry`（两个 settings.section，v0.20
   把重试拆成独立页），modelparams 用 `better-webui-modelparams`
-  （conversation.input.right）。
+  （conversation.input.left）。
 - **locale NS 独立**：archive 用 `better-webui-archive`，chime 用 `better-webui-notify`，
   settings 用 `better-webui-settings`（两个页共享同一 NS），modelparams 用
   `better-webui-modelparams`。

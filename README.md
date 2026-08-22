@@ -4,7 +4,8 @@ DeepSeek Harness Web GUI 插件：**归档会话管理**（查看 · 恢复 · �
 **自定义模型推理等级自动补齐**（让自定义模型像预制模型一样能用原生「推理等级」菜单）+
 **会话活动提示音**（agent 等待输入 / 完成任务时播放提示音）+
 **免密钥 Exa 网络搜索**（无 API key 也能用原生 `web_search`）+
-**思考标签切分**（把泄漏进正文的思考文本折叠回 Think 块）。
+**思考标签切分**（把泄漏进正文的思考文本折叠回 Think 块）+
+**持久化 bash 卡顿卫士**（minimal 预设的持久终端退化为 ~3s 沉默档后自动重置 shell）。
 
 ## 功能
 
@@ -121,6 +122,30 @@ high: high }`，写回同一个 `llm-pi-ai` 命名空间（持久化到 `setting
 
 删除未归档会话的推荐流程：原生会话行菜单 →「归档会话」→ 在本页彻底删除。
 
+### 持久化 bash 卡顿卫士（v0.12 新增）
+
+dsh 的**持久化** `bash` 工具（minimal 预设及任何挂载它的 preset 使用）在每次
+发送命令前通过 PTY 就绪协议等一个 prompt 标记：健康时几十 ms 即返回，但一旦
+会话内有人覆盖了 `PROMPT_COMMAND`（`.bashrc`、starship/direnv/conda 或显式
+赋值都可能），标记不再发出，**每次** `bash` 调用都静默退化为 ~3s 沉默档——
+工具只在超时/退出时重置，所以这个退化对当前会话是**永久**的。本插件宿主在
+`tools/execute` waterfall 上量每次 `bash` 调用的墙钟耗时，检测到退化后自动恢复：
+
+- **检测**：同一 owner（agent）持有活动 PTY 会话、且连续 3 次 `bash` 调用
+  每次 ≥ 2800ms → 判定沉默档退化（健康调用几十 ms，退化调用必达 ~3s）
+- **动作**：调用 `terminals.kill` 重置该 owner 的**所有**会话，下一次 `bash`
+  调用从干净 shell 重新开始，快路径恢复
+- **冷却**：每个 owner 两次重置之间至少隔 60s，病态循环不会反复杀 shell；
+  kill 本身有 2s 上限，绝不拖住工具调用
+- **作用域**：`terminals` 服务按 preset 隔离，只有挂载持久终端的 preset
+  （minimal）能读到；一次性 `bash` 工具（cordis/standard 预设）无终端，跳过
+- **已知代价**：重置后下一次 `bash` 调用先报一次错（工具缓存了已死会话 id），
+  随后从新 shell 恢复。属"止痛"：把"永久每次 +3s"变成"最多影响几次 + 一次报错"。
+  根治（工具级解耦，见 [docs/dsh-bash-tool-stall-report.md](docs/dsh-bash-tool-stall-report.md)
+  §9 方案 A）仍在 dsh 上游或本地 patch 层面
+
+生效方式：改动在 host half，需**重启 `dsh web`**。
+
 ## 安装
 
 在 dsh 的 profile 里把它装成 bundle（`@deepseek-ai/dsh-web-app` 对应的 profile）。
@@ -142,6 +167,8 @@ node tests/smoke.mjs    # 客户端 jsdom 集成测试（真实 React 18.3.1 + �
 node tests/host.mjs     # 宿主 half 集成测试（真实临时目录 + 模拟注册表，验证彻底删除无残留）
 node tests/reasoning.mjs # 宿主 half 推理等级补齐测试（模拟 settings 服务，验证幂等补齐/不覆盖/监听）
 node tests/web-search-exa.mjs # 免密钥 Exa 搜索 provider 测试（模拟 ctx.web + fetch，验证匿名 MCP/REST/429/abort）
+node tests/stall-guard.mjs # 持久化 bash 卡顿卫士测试（纯决策逻辑 + tools/execute 接线，验证重置/冷却/永不拖住调用）
+node tests/splitter.mjs # 思考标签切分测试（验证切分/空块清除合并/协议安全）
 ```
 
 - 改 client half → 刷新浏览器即可（webserver stat-poll 自动热加载）

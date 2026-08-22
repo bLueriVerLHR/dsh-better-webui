@@ -8,7 +8,12 @@
 > `99f6f02fec` = `dsh-v0.1.0-rc.7`，与运行中的全局安装版本
 > `/home/archie/.nvm/.../@deepseek-ai/dsh` `0.1.0-rc.7` 完全一致）+ 真实 PTY 实测脚本
 > [repro-pty-stall.mjs](repro-pty-stall.mjs)。
-> 报告日期：2026-08-20。
+> 报告日期：2026-08-20。后续核查：2026-08-21（见 §11 更新）。
+>
+> > **2026-08-21 更新（重要）**：本报告初稿称"rc.7 已是最新发布版"，**已过时**。
+> > 经核查 npm registry 与上游 `git clone`，最新版为 **`0.1.1-rc.2`**（= master），
+> > 且 **该卡顿在 0.1.1-rc.2 中依然存在**（`terminal-bash` 的 `session.ts`/`sanitize.ts`
+> > 原封不动，`tool-bash-persistent` 只做了 session-exit 重构）。详细对比见 §11。
 
 ---
 
@@ -43,7 +48,15 @@ dsh 有两套 `bash` 工具，只有一套与本次问题相关：
 
 Web GUI 的 `standard`（标准模式）预设用非持久 `tool-bash`；`minimal`（极简模式）
 预设用 `tool-bash-persistent`（`apps/cli/config/agent-presets/minimal/agent.cordis.yml`）。
-用户遇到此问题，说明实际在使用 `minimal` 预设或自建预设。
+
+> ⚠️ **判定基准：以 dsh 版本为准，不与预设绑定。** 本缺陷根因在
+> `@deepseek-ai/dsh-terminal-bash` 的 PTY 就绪协议（dsh 本体，版本相关），
+> **任何**用到该后端的会话（无论哪个预设，只要底层走 `dsh-terminal-bash` 的
+> `inferred_idle` 沉默档兜底）都可能出现；触发与否取决于会话内是否发生了
+> `PROMPT_COMMAND` 覆盖 / 平台 ptrace 受限 / 静默命令等，与用户选的预设无关。
+> 后续如需判断某次卡顿是否本缺陷，应按 **dsh 版本**（`dsh --version`）与
+> 本报告的根因/复现对照，而不是按会话预设。
+
 
 **旧版（修复前）的硬编码问题**（git 历史，见 §3）：
 旧 `tool-bash-persistent` 初始化时执行 `stty -echo; PS1='__DSH_PERSISTENT_BASH_PROMPT__ '`，
@@ -65,7 +78,8 @@ a2d0f7f411  refactor: apply repository naming contract                          
 ```
 
 - 工作区 HEAD = `99f6f02fec` = `dsh-v0.1.0-rc.7`，`origin/master` 与之相同，
-  **已是最新发布版**；全局安装的 dsh 也是 `0.1.0-rc.7`。没有更新的公开修复。
+  **当时已是最新发布版**；全局安装的 dsh 也是 `0.1.0-rc.7`。（**注**：截至
+  2026-08-21，npm 上已有更新版本 `0.1.0-rc.8` / `0.1.1-rc.2`，见 §11。）
 - `a8dc6f9776` 通过 PR #2586（`7841e0a93e`）合入，**包含在 rc.7 里**
   （`git tag --contains a8dc6f9776` → `dsh-v0.1.0-rc.7`）。
 - 修复的实现说明见
@@ -221,17 +235,26 @@ settle，工具循环每 3s 才查一次 end 标记。正确但慢。
 - **成本**：纯配置，零代码，可立即在 `~/.dsh/.agent-presets/.../agent.cordis.yml`
   或 profile patch 里改。
 
-### 方案 D（better-webui 插件内缓解）
+### 方案 D（better-webui 插件内缓解）—— **已于 2026-08-21 实施**（见 §11）
 - 插件无法干净地改 `terminal-bash` 内部。可行的是：宿主 half 里加一条
-  `tools/pre-execute` / 会话事件监听，检测到"连续 bash 调用走沉默档"后调用
+  `tools/execute` 监听，检测到"连续 bash 调用走沉默档"后调用
   `ctx.terminals.kill` 重置 shell（让下一次调用从干净状态开始）；
   或在 persona/系统提示里提醒模型不要改动 `PROMPT_COMMAND`（很弱）。
 - **效果**：把"永久退化"变成"最多影响几次"，属止痛而非治本。
+- **已实施形态**：`src/host.js` 的 `installPersistentBashStallGuard` —— 用
+  `tools/execute` 量每次 `bash` 调用的墙钟耗时（插件拿不到内部 `waitReason`，
+  只能按时长推断：健康调用几十 ms，沉默档调用 ≥ idleSilenceMs 3s），同一 owner
+  连续 3 次 ≥ 2.8s 且持有活动 PTY 会话 → `ctx.terminals.kill` 重置该 owner 的
+  所有会话；带 60s 冷却防止抖动。纯逻辑 `updateStallStrikes` 已单测
+  （`tests/stall-guard.mjs`，23 项断言）。代价：重置后下一次 `bash` 调用会
+  **先报一次错**（工具缓存了已死会话 id → `startSend` 失败 → 工具 reset 缓存 →
+  下下次从新 shell 开始），符合"止痛"定位。
 
 ### 建议
 优先推动**方案 A**（工具级解耦），它是唯一能从根上消除"每次 bash 都慢"且不依赖
 提示符协议的修法，且可独立验证（回归测试断言"故意覆盖 PROMPT_COMMAND 后，下一条
-命令仍应在几百 ms 内返回"）。在 patch 落地前，可用**方案 C** 快速缓解。
+命令仍应在几百 ms 内返回"）。在 patch 落地前，可用**方案 C** 快速缓解，
+**方案 D 已作为 better-webui 的运行时止痛落地**（见 §11）。
 
 ---
 
@@ -245,5 +268,57 @@ settle，工具循环每 3s 才查一次 end 标记。正确但慢。
 node docs/repro-pty-stall.mjs   # 依赖全局安装 dsh 的 node-pty，或设 NODE_PTY_PATH
 ```
 
-> 注：本报告为调查结论，未改动 dsh 本体、未改 better-webui 运行逻辑。
-> 复现脚本仅作证据留存。
+---
+
+## 11. 2026-08-21 更新：最新版核查 + better-webui 插件侧缓解
+
+### 11.1 "rc.7 已是最新"已过时，且 0.1.1-rc.2 并未修此卡顿
+
+- npm registry（`@deepseek-ai/dsh` dist-tags）：`latest` = **`0.1.1-rc.2`**；
+  另有 `0.1.0-rc.8`（08-19）、`0.1.1-rc.1` / `rc.2`（08-21）。
+- 用 `git clone https://github.com/deepseek-ai/deepseek-harness`（`--filter=blob:none`，
+  保留全历史与标签）逐文件对比 `dsh-v0.1.0-rc.7` → `dsh-v0.1.1-rc.2`：
+  - `packages/terminal/terminal-bash/src/session.ts`、`sanitize.ts`：**零改动**。
+    `CONTROLLED_PROMPT = 'dsh> '`、`idleSilenceMs=3000`、`handoffGraceMs=500` 原样。
+  - `packages/shell/tool-bash-persistent/src/index.ts`：仅把 session-exit 处理抽成
+    `respondToSessionExit` 辅助函数（重构，无行为变化），仍然 `await operation.done`
+    先于读 end 标记——**卡顿结构未变**。
+  - `terminal-bash` 其余改动全部围绕 **pwsh（PowerShell）持久终端** 新增支持，
+    与 bash 就绪协议无关。
+  - `origin/master` == `dsh-v0.1.1-rc.2`（没有更新于 rc.2 的提交）。
+- 结论：**最新版依然受此缺陷影响，不值得等上游**。这也是为什么选择插件侧止痛。
+
+### 11.2 网络检索补充的知识
+
+- `OSC 133;D` 即标准 shell integration 的 `FTCS_COMMAND_FINISHED`（iTerm2 / VS Code /
+  Ghostty 等都在用），dsh 复用了它但**私有地**要求提示符尾部恰好等于 `dsh> `
+  （[terminfo.dev 协议说明](https://terminfo.dev/extensions/osc133-d-command-finished)）。
+- 业界最佳实践是**"标记优先"**——注入唯一标记字符串定位命令结束，而非匹配提示符
+  （如 [ripple/SCHEMA.md](https://github.com/yotsuda/ripple/blob/master/adapters/SCHEMA.md)、
+  VS Code OSC 633）。这印证 **方案 A**：dsh 工具本来就有随机 end 标记
+  `__DSH_PERSISTENT_BASH_END_<nonce>:`，只是它先等 PTY settle 而非先查标记。
+- `PROMPT_COMMAND` 被环境脚本互相覆盖是生态级已知问题
+  （[starship#4642](https://github.com/starship/starship/issues/4642)），与 dsh 场景同类。
+- GitHub issue 追踪（#2585 等）不对公网开放（仓库 `open_issues_count: 0`）；
+  `Fixes #2585` 由 commit `a8dc6f9776` 的消息佐证，指向内部追踪号。
+- dsh 源码 checkout（`.tmp-check/deepseek-harness`，已被 `.gitignore` 忽略）保留
+  在 better-webui 工作区，供后续 `spec.sh` 生成补丁参考；全库 119MB。
+
+### 11.3 better-webui 插件侧缓解（方案 D 落地）
+
+按用户决策（删除 dsh-fix 库方案、只走插件方法），在 better-webui 宿主 half 实现
+`installPersistentBashStallGuard`（`src/host.js`）：
+
+- **检测**：`tools/execute`（waterfall，同 `guard/timeout-policy` 的挂法）量每次
+  `bash` 调用墙钟耗时；同一 owner 且持有活动 PTY 会话（`ctx.terminals.list` 非空，
+  天然排除一次性 `bash` 工具）时，连续 3 次 ≥ 2800ms → 判定沉默档退化。
+- **动作**：`ctx.terminals.kill(owner, sessionId, reason)` 重置该 owner 所有会话；
+  下一次 `bash` 调用触发工具缓存重置并重新 spawn 新 shell，恢复快路径。
+- **参数**：`STALL_THRESHOLD_MS=2800`、`STALL_STRIKES=3`、`STALL_RESET_COOLDOWN_MS=60000`。
+- **测试**：`tests/stall-guard.mjs`（23 项断言，含纯逻辑 + 接线），全部通过；
+  既有 host/reasoning/splitter/web-search-exa/smoke 测试不受影响。
+- **生效**：宿主侧为静态 bundle，改动已构建进 `lib/index.js`，需**重启 `dsh web`**
+  后加载；重启由用户执行。
+- **已知代价**：重置后下一次 `bash` 调用先报一次错（工具缓存了已死会话 id），随后
+  从新 shell 恢复。属"止痛"：把"永久每次 +3s"变成"最多影响几次 + 一次报错"。
+  根治仍应推 **方案 A**（上游或本地 patch，见 §9）。

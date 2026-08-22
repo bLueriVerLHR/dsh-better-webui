@@ -1,7 +1,7 @@
 {
   "name": "@blueriverlhr/dsh-better-webui",
-  "description": "Web GUI enhancement plugin: archive-session management (view / restore / two-step permanent delete) + custom-model reasoning-level provisioning + session activity chimes (sound only, with on/off and volume in General settings; release-preview slider, error chime on failed turns) + keyless Exa web search (anonymous Exa hosted MCP by default, REST upgrade via EXA_API_KEY) + thinking-tag splitter (move leaked think-tag text from the text channel into reasoning blocks for the webui Think disclosure)",
-  "version": "0.11.0",
+  "description": "Web GUI enhancement plugin: archive-session management (view / restore / two-step permanent delete) + custom-model reasoning-level provisioning + session activity chimes (sound only, with on/off and volume in General settings; release-preview slider, error chime on failed turns) + keyless Exa web search (anonymous Exa hosted MCP by default, REST upgrade via EXA_API_KEY) + thinking-tag splitter (move leaked think-tag text from the text channel into reasoning blocks for the webui Think disclosure) + persistent-bash stall guard (auto-reset the minimal preset's persistent shell when PTY readiness degrades to the ~3s silence tier)",
+  "version": "0.12.0",
   "private": true,
   "type": "module",
   "main": "lib/index.js",

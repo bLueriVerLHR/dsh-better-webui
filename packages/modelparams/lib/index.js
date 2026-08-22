@@ -12,10 +12,13 @@
  *     it through `prepareCall` → canonicalHeader → frozen request → pi-ai
  *     adapter (`options.temperature`) → wire.
  *
- *   - UX contract (user ruling): **empty = follow the model default, filled =
- *     override**. The stored `temperature` is `undefined` when empty (no
- *     override) and a number when the user typed an override. "Reset to
- *     defaults" clears the stored override back to `undefined`.
+ *   - UX contract (user ruling): **empty = the system-determined default
+ *     temperature (DEFAULT_TEMPERATURE), filled = override**. The stored
+ *     `temperature` is `undefined` when empty (the panel renders an empty input
+ *     whose placeholder shows the concrete default) and a number when the user
+ *     typed an override. The interceptor resolves empty → DEFAULT_TEMPERATURE,
+ *     so the wire always carries a concrete value. "Reset to defaults" clears
+ *     the stored override back to empty.
  *
  *   - Session-scoped pinning: the user's model is "a default value for each
  *     new session, fixed within a session". This half keeps a
@@ -121,7 +124,12 @@ export function sectionOf(config) {
  * @returns {(endpoint: string, payload: unknown) => Promise<{ok: boolean}>} the channel handler.
  */
 export function makeHandler(ctx) {
-  const read = () => sectionToConfig(ctx.settings.get(NS))
+  /** read: the stored config plus the system-determined default temperature
+      (so the panel can show the concrete default as the empty-input placeholder). */
+  const read = () => {
+    const config = sectionToConfig(ctx.settings.get(NS))
+    return { ...config, defaultTemperature: DEFAULT_TEMPERATURE }
+  }
 
   /** Normalize a wire config: empty/null temperature → undefined (follow default); number → clamp. */
   const clamp = (value) => {
@@ -207,7 +215,9 @@ export function apply(ctx) {
   }
 
   // The interceptor: pin the effective temperature per session on its first
-  // request, then keep it fixed for the session's lifetime.
+  // request, then keep it fixed for the session's lifetime. Empty (no stored
+  // override) resolves to the system-determined DEFAULT_TEMPERATURE, so the
+  // wire always carries a concrete value.
   const disposeInterceptor = ctx.on('agent/request', async (payload, next) => {
     const config = await next()
     if (config === null || typeof config !== 'object') return config
@@ -216,7 +226,8 @@ export function apply(ctx) {
     if (sid !== undefined && pinnedBySession.has(sid)) {
       pinned = pinnedBySession.get(sid)
     } else {
-      pinned = sectionToConfig(ctx.settings.get(NS)).temperature
+      const stored = sectionToConfig(ctx.settings.get(NS)).temperature
+      pinned = stored === undefined ? DEFAULT_TEMPERATURE : stored
       if (sid !== undefined) pinnedBySession.set(sid, pinned)
     }
     return applyTemperature(pinned, config)

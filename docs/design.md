@@ -420,6 +420,12 @@ top_p 正确、对 temperature 过严**——漏掉了 `agent/request` 这个官
     logprobs/penalty 只留「暂不支持」标签（原因放悬停 title）。schema 简化为
     `{ temperature?, mode }`（temperature 空 = 不覆盖，写用 `settings.replace`
     以便清空）。
+  - **v0.21 UX 二次微调（用户反馈）**：① 数值框**去掉上下箭头**（仅输入数字，
+    CSS 隐藏 spin 按钮，保留 `type="number"`）；② **默认值直接写具体数值**——
+    placeholder 从描述性文案改为直接显示默认值（如「1.0」），由 host `read`
+    返回 `defaultTemperature` 供客户端动态显示（避免文案与默认值漂移）；语义
+    一致化：**留空 = 系统默认 1.0**（拦截器把空解析为 `DEFAULT_TEMPERATURE`，
+    wire 总是携带具体值）。
 - **设置中心规则（v0.21 裁决，架构契约）**：`settings` 包是 better-webui 设置面板
   的独立承载包；**只有需要被 better-webui 配置页配置的包**才 detect 它
   （client 启动 `ctx.get` 判空）——装了经它注册配置页、由 settings 包管理；没装

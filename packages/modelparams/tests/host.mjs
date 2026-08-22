@@ -83,8 +83,9 @@ writes.length = 0
   check(ping.ok === true && ping.value.v === 1, 'ping 返回 wire 版本')
 
   const read0 = await rpc('read', {})
-  check(read0.ok === true && read0.value.temperature === undefined && read0.value.mode === 'persist',
-    'read：空命名空间 → 温度空（默认）/ persist')
+  check(read0.ok === true && read0.value.temperature === undefined && read0.value.mode === 'persist'
+    && read0.value.defaultTemperature === DEFAULT_TEMPERATURE,
+    'read：空命名空间 → 温度空（默认）/ persist，且返回 defaultTemperature')
 
   const applyRes = await rpc('apply', { temperature: 0.7, mode: 'persist' })
   check(applyRes.ok === true && applyRes.value.changed === true
@@ -148,13 +149,15 @@ writes.length = 0
   check(b2.temperature === 0.9, '会话 B 销毁后复用 id：重新解析')
 }
 
-/* 3. empty (no override) → no temperature; passthrough keeps machine config. */
+/* 3. empty (no stored override) → the system default (DEFAULT_TEMPERATURE) is
+      injected, so the wire always carries a concrete value. */
 {
   const { ctx, events } = makeCtx({ user: { mode: 'persist' } })
   apply(ctx)
   const request = events['agent/request']
   const config = await request({ agent: { id: 'c' } }, async () => ({ provider: 'p', model: 'm' }))
-  check(config.temperature === undefined && config.provider === 'p', '温度空 → 不注入（跟随模型默认）')
+  check(config.temperature === DEFAULT_TEMPERATURE && config.provider === 'p',
+    '温度空 → 注入系统默认 ' + DEFAULT_TEMPERATURE + '（wire 总有具体值）')
 }
 
 /* 4. boot hot-clear: a persisted hot mode is cleared to defaults. */

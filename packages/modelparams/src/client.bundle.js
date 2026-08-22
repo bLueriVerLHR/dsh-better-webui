@@ -9,13 +9,14 @@
  * popover panel it opens.
  *
  * Panel UX (user ruling):
- *   - temperature: **empty = follow the model default, filled = override**;
- *     the empty input shows the default as ghost/placeholder text.
+ *   - temperature: **empty = the system-determined default (shown as the
+ *     concrete number in the input placeholder), filled = override**.
+ *   - the number input has no up/down spinner arrows — typing only.
  *   - logprobs / penalty — visible but marked 暂不支持: the harness request
  *     vocabulary and both adapters have no field for them, and the pi-ai
  *     `samplingParams` passthrough awaits dsh-llm-pi-ai adoption (see
  *     docs/design.md §11). No per-parameter explanations (advanced settings).
- *   - 恢复默认 clears the stored override back to empty (default).
+ *   - 恢复默认 clears the stored override back to empty (system default).
  *   - 持久化 / 热调 mode (no explanation text).
  *
  * The control talks to the host through the `/better-webui-modelparams` RPC
@@ -34,8 +35,8 @@ var WIRE = 1
 /** RPC channel; must match CHANNEL in src/host.js. */
 var CHANNEL = '/better-webui-modelparams'
 
-/** The default config: no override (empty temperature), persist mode. */
-var DEFAULTS = { temperature: undefined, mode: 'persist' }
+/** The default config: no override (empty temperature → system default), persist mode. */
+var DEFAULTS = { temperature: undefined, mode: 'persist', defaultTemperature: 1.0 }
 
 var DICT = {
   zh: {
@@ -44,7 +45,6 @@ var DICT = {
     'ctl.stale': '宿主插件是旧版本，请重启 dsh web 后再操作',
 
     'temp.label': 'temperature',
-    'temp.placeholder': '默认（留空跟随模型）',
 
     'unsupported.tag': '暂不支持',
     'unsupported.detail': '当前 dsh 无该参数字段，等上游采用 samplingParams 后可用',
@@ -68,7 +68,6 @@ var DICT = {
     'ctl.stale': 'Host plugin is an old version — restart dsh web before acting',
 
     'temp.label': 'temperature',
-    'temp.placeholder': 'default (leave empty)',
 
     'unsupported.tag': 'unsupported',
     'unsupported.detail': 'No field for this param in current dsh; available once upstream adopts samplingParams',
@@ -102,7 +101,8 @@ var CSS = [
   '.bwm-divider{border-top:1px solid var(--dsw-alias-border-l1);}',
   '.bwm-row{display:flex;align-items:center;gap:8px;width:100%;}',
   '.bwm-rowtitle{flex:1;min-width:0;font-weight:500;white-space:nowrap;}',
-  '.bwm-input{flex:none;width:72px;box-sizing:border-box;padding:4px 8px;font-size:12px;line-height:18px;text-align:right;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l2);border-radius:6px;}',
+  '.bwm-input{flex:none;width:72px;box-sizing:border-box;padding:4px 8px;font-size:12px;line-height:18px;text-align:right;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l2);border-radius:6px;-moz-appearance:textfield;}',
+  '.bwm-input::-webkit-outer-spin-button,.bwm-input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}',
   '.bwm-input::placeholder{color:var(--dsw-alias-label-caption);font-style:normal;}',
   '.bwm-input:focus{outline:1px solid var(--dsw-alias-state-business-primary);outline-offset:1px;}',
   '.bwm-unsupported{display:flex;align-items:center;gap:8px;width:100%;opacity:.55;}',
@@ -124,6 +124,19 @@ function reportError(scope, error) {
   var message = error instanceof Error ? error.message : String(error)
   console.error('better-webui-modelparams: ' + scope + ' failed: ' + message)
   return message
+}
+
+/**
+ * Format a temperature for display: keep at most two decimals and always show
+ * one (JS String(1.0) would drop the ".0"). "1.0", "0.7", "1.25", "0.0".
+ * @param {number|string} x - the temperature value.
+ * @returns {string} the display form.
+ */
+function fmtTemp(x) {
+  var n = Number(x)
+  if (!Number.isFinite(n)) return String(x)
+  var s = n.toFixed(2).replace(/\.?0+$/, '')
+  return s.indexOf('.') === -1 ? s + '.0' : s
 }
 
 /**
@@ -226,8 +239,8 @@ function SamplingPanel(props) {
         min: '0',
         max: '2',
         step: '0.05',
-        placeholder: t('temp.placeholder'),
-        value: cfg.temperature === undefined ? '' : String(cfg.temperature),
+        placeholder: fmtTemp(cfg.defaultTemperature ?? 1.0),
+        value: cfg.temperature === undefined ? '' : fmtTemp(cfg.temperature),
         disabled: stale || busy,
         onChange: setTemp,
       })),

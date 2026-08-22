@@ -24,7 +24,7 @@ const check = (ok, label) => {
 
 /* RPC stub: ping/read/apply/reset. */
 const rpcLog = []
-let cfg = { temperature: undefined, mode: 'persist' }
+let cfg = { temperature: undefined, mode: 'persist', defaultTemperature: 1.0 }
 const rpcResponse = async (method, payload) => {
   if (method === 'ping') return { ok: true, value: { v: 1 } }
   if (method === 'read') return { ok: true, value: { ...cfg } }
@@ -32,11 +32,12 @@ const rpcResponse = async (method, payload) => {
     cfg = {
       temperature: payload.temperature === null || payload.temperature === undefined ? undefined : Number(payload.temperature),
       mode: payload.mode === 'hot' ? 'hot' : 'persist',
+      defaultTemperature: 1.0,
     }
     return { ok: true, value: { changed: true, config: { ...cfg } } }
   }
   if (method === 'reset') {
-    cfg = { temperature: undefined, mode: 'persist' }
+    cfg = { temperature: undefined, mode: 'persist', defaultTemperature: 1.0 }
     return { ok: true, value: { changed: true, config: { ...cfg } } }
   }
   return { ok: false, error: { message: 'unknown' } }
@@ -91,11 +92,17 @@ check(btn.getAttribute('aria-expanded') === 'true', '点击按钮展开面板')
 check(host.querySelector('.bwm-pop') !== null, '面板渲染')
 check(host.querySelector('.bwm-pop-title').textContent === '超参配置', '面板标题')
 
-/* Panel: temperature input is EMPTY (default) with a placeholder; no enable
-   checkbox; unsupported rows; mode toggle. */
+/* Panel: temperature input is EMPTY (system default) whose placeholder shows
+   the concrete default number (1.0); no enable checkbox; unsupported rows;
+   mode toggle. */
 const tempInput = host.querySelector('.bwm-input')
 check(tempInput !== null && tempInput.type === 'number' && tempInput.value === ''
-  && tempInput.placeholder.includes('默认'), '温度输入框：默认空 + 虚字提示默认')
+  && tempInput.placeholder === '1.0', '温度输入框：默认空 + placeholder 直接写默认值 1.0')
+{
+  const source = readFileSync(packagePath('modelparams', 'lib', 'client.js'), 'utf8')
+  check(source.includes('::-webkit-outer-spin-button') && source.includes('-moz-appearance:textfield'),
+    '数值框隐藏上下箭头（spin 按钮，仅输入数字）')
+}
 check(host.querySelector('.bwm-check') === null, '无「启用」复选框（留空即默认）')
 check(host.querySelectorAll('.bwm-unsupported').length === 2, '两行暂不支持（logprobs / penalty）')
 const tags = [...host.querySelectorAll('.bwm-tag')].map((n) => n.textContent)

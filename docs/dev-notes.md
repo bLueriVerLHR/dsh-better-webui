@@ -749,6 +749,14 @@ design.md §11.5；这里记实现要点与坑。
   写路径从 `mutate`（三字段）改为 **`settings.replace`**（`sectionOf` 只写有值键，
   温度空时整个键消失 → replace 落到 schema 默认 undefined = 清空）。RPC apply
   接受 `temperature: null`（清空）/ 数值（覆盖 0–2 夹取）。
+- **v0.21 UX 二次微调**：① 数值框**隐藏上下箭头**（`.bwm-input` 加
+  `::-webkit-outer/inner-spin-button{appearance:none}` + `-moz-appearance:textfield`，
+  保留 `type="number"` 仅输入数字）；② **placeholder 直接写具体默认值**——
+  host `read` 返回 `defaultTemperature`（`DEFAULT_TEMPERATURE`），客户端用
+  `fmtTemp` 显示（`String(1.0)` 在 JS 是 `"1"` 会丢 `.0`，故 toFixed(2) 去尾零
+  再补一位小数，得 `1.0`/`0.7`/`1.25`）；③ 语义一致化：拦截器把空解析为
+  `DEFAULT_TEMPERATURE`（`stored === undefined ? DEFAULT : stored`），**wire 总
+  是携带具体值**（不再有"不注入"状态）。
 - **坑 1（RPC 双重包装）**：handler 表方法若返回 `{ ok, value }`，外层再包一次就
   变成双层——表方法必须返回**裸值**，外层统一 `{ ok, value }` 包装（参照 settings 包）。
 - **坑 2（jsdom + React 18 number 输入事件）**：对 number 输入派发 `input`/keydown

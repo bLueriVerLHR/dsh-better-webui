@@ -185,6 +185,59 @@ host.apply(bareCtx)
 await new Promise((resolve) => setTimeout(resolve, 20))
 check(writes.length === 0, 'settings 服务缺少 usable 面时静默跳过、不影响启动')
 
+/* 6. REGRESSION (boot race): on a real boot the reasoning plugin activates on
+      the `settings` service BEFORE dsh-llm-pi-ai registers its `llm-pi-ai`
+      section, so the immediate pass has no namespace and skips. The 2s late
+      timer is the only catch — and `ctx.effect` runs its callback immediately,
+      so the effect must RETURN the clear-disposer, never call clearTimeout at
+      apply time (calling it killed the fallback and provisioning never ran).
+      Simulate: namespace unregistered at apply → registered after 100ms →
+      the late timer must still provision it. */
+writes.length = 0
+let lateRegistered = false
+const raceUser = { providers: { 'custom-gateway': { models: [{ id: 'plain-model' }] } } }
+let raceRevision = 1
+const raceListeners = []
+const raceSettings = {
+  describe: () => lateRegistered
+    ? [{ ns: 'llm-pi-ai', user: raceUser, revision: raceRevision }]
+    : [],
+  mutate: async (ns, ops, expectedRevision) => {
+    writes.push({ ns, ops, revision: expectedRevision })
+    applyOps(raceUser, ops)
+    raceRevision += 1
+  },
+}
+const raceCtx = {
+  effect(fn) { return fn() ?? (() => {}) },
+  connection: { rpc: { handle: () => () => {} } },
+  get: (name) => (name === 'settings' ? raceSettings : services[name]),
+  root: { on: (event, callback) => { raceListeners.push([event, callback]); return () => {} } },
+}
+host.apply(raceCtx)
+await new Promise((resolve) => setTimeout(resolve, 100))
+check(writes.length === 0, '命名空间晚注册时，apply 时立即补齐不写入')
+lateRegistered = true
+await new Promise((resolve) => setTimeout(resolve, 2400))
+check(writes.length === 1, '命名空间晚注册时由晚定时器补齐（回归：晚定时器不被立即清除）')
+const raceOp = writes[0]?.ops.find((op) => op.path.join('.') === 'providers.custom-gateway.models')
+check(raceOp !== undefined && raceOp.value[0].reasoningEfforts !== undefined, '晚注册后写入的是 models 全档位数组')
+
+/* 7. REGRESSION (fast, structural): every `ctx.effect` callback in apply must
+      RETURN a disposer function — a callback that calls clearTimeout as a
+      statement returns undefined and is exactly the bug that cleared the late
+      timer at apply time. */
+const effectReturns = []
+const captureCtx = {
+  effect(fn) { const result = fn(); effectReturns.push(result); return result ?? (() => {}) },
+  connection: { rpc: { handle: () => () => {} } },
+  get: (name) => (name === 'settings' ? { describe: 'not-a-function' } : services[name]),
+  root: { on: () => () => {} },
+}
+host.apply(captureCtx)
+check(effectReturns.length === 2 && effectReturns.every((r) => typeof r === 'function'),
+  'apply 的 ctx.effect 回调均返回 disposer（晚定时器不被立即清除）')
+
 const failed = results.filter(([ok]) => !ok)
 console.log(failed.length === 0 ? '\n全部通过 ✓' : `\n${failed.length} 项失败`)
 process.exit(failed.length === 0 ? 0 : 1)

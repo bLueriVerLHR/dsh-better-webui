@@ -181,7 +181,11 @@ export function apply(ctx) {
   // pi-ai adapter registers its settings section during its own apply, and if
   // that lands after this plugin's boot pass no document event fires to retry.
   const lateTimer = setTimeout(() => provision(), 2000)
-  ctx.effect(() => { clearTimeout(lateTimer) }, 'better-webui-reasoning: late provision')
+  // ctx.effect runs its callback immediately and stores the RETURNED value as
+  // the disposer — so the callback must return the clear, never call it. Calling
+  // clearTimeout here (as a statement) would kill the late timer at apply time
+  // and the fallback pass would never fire.
+  ctx.effect(() => () => clearTimeout(lateTimer), 'better-webui-reasoning: late provision')
   if (typeof ctx.root?.on === 'function') {
     const disposeSettingsWatcher = ctx.root.on('settings/document-updated', (ns) => {
       if (ns !== LLM_PI_AI_NS) return

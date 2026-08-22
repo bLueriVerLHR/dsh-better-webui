@@ -757,6 +757,10 @@ design.md §11.5；这里记实现要点与坑。
   再补一位小数，得 `1.0`/`0.7`/`1.25`）；③ 语义一致化：拦截器把空解析为
   `DEFAULT_TEMPERATURE`（`stored === undefined ? DEFAULT : stored`），**wire 总
   是携带具体值**（不再有"不注入"状态）。
+- **v0.21 UX 三次微调**：工具行按钮从文字「超参配置」换成**滑杆/调谐图标**
+  （`SlidersIcon`，三行带旋钮的 SVG）；`.bwm-btn` 改为 32×32 图标按钮，
+  hover 与无障碍名称（`aria-label`）仍用 `ctl.title` / `ctl.button` 文案。
+  smoke 断言按钮含 `svg` 且 `aria-label === '超参配置'`。
 - **坑 1（RPC 双重包装）**：handler 表方法若返回 `{ ok, value }`，外层再包一次就
   变成双层——表方法必须返回**裸值**，外层统一 `{ ok, value }` 包装（参照 settings 包）。
 - **坑 2（jsdom + React 18 number 输入事件）**：对 number 输入派发 `input`/keydown

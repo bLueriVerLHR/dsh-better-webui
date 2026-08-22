@@ -1,7 +1,8 @@
 # @blueriverlhr/dsh-better-webui-modelparams
 
 模型采样参数控制（host + client）：输入区（`conversation.input.right`，composer
-工具行、发送键前）放一个**「超参配置」按钮**，点击弹出面板编辑。语义：**每个新
+工具行、发送键前）放一个**「超参配置」图标按钮**（滑杆/调谐图标，hover 与
+无障碍名称为「超参配置」），点击弹出面板编辑。语义：**每个新
 会话取默认值，会话内固定**。
 
 ## 功能

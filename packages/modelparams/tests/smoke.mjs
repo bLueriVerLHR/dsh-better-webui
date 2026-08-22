@@ -77,9 +77,11 @@ await new Promise((resolve) => {
   setTimeout(resolve, 60) // wait for the async read()
 })
 
-/* The compact control is a single button — no input box in the tool row. */
+/* The compact control is a single icon button (sliders/tuning) — no input box
+   and no text label in the tool row; the accessible name comes from aria-label. */
 const btn = host.querySelector('.bwm-btn')
-check(btn !== null && btn.textContent === '超参配置', '工具行是「超参配置」按钮')
+check(btn !== null && btn.querySelector('svg') !== null, '工具行是图标按钮（滑杆/调谐图标）')
+check(btn.getAttribute('aria-label') === '超参配置', '图标按钮的 aria-label 为「超参配置」')
 check(host.querySelector('.bwm-input') === null, '工具行没有输入框（编辑都在面板里）')
 check(btn.getAttribute('aria-expanded') === 'false', '按钮收起状态')
 check(rpcLog.some(([ch, m]) => ch === '/better-webui-modelparams' && m === 'read'), '挂载时 read 拉取配置')

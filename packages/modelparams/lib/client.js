@@ -92,9 +92,9 @@ var DICT = {
 }
 
 var CSS = [
-  /* tool-row button */
-  '.bwm-btn{display:inline-flex;align-items:center;height:32px;padding:0 12px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font-family:var(--dsw-font-family);font-size:12px;line-height:20px;cursor:pointer;white-space:nowrap;}',
-  '.bwm-btn:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);}',
+  /* tool-row icon button */
+  '.bwm-btn{display:inline-flex;align-items:center;justify-content:center;flex:none;width:32px;height:32px;padding:0;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);cursor:pointer;}',
+  '.bwm-btn:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);}',
   '.bwm-btn[data-active=true]{border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-brand-primary);}',
   '.bwm-backdrop{position:fixed;inset:0;z-index:9990;background:transparent;}',
 
@@ -280,8 +280,21 @@ function SamplingPanel(props) {
 }
 
 /**
+ * A sliders/tuning icon for the tool-row button (three rows with knobs).
+ */
+function SlidersIcon() {
+  return h('svg', { width: 16, height: 16, viewBox: '0 0 16 16', fill: 'none', 'aria-hidden': 'true' },
+    h('line', { x1: 2, y1: 4, x2: 14, y2: 4, stroke: 'currentColor', strokeWidth: 1.2, strokeLinecap: 'round' }),
+    h('circle', { cx: 5, cy: 4, r: 1.4, fill: 'currentColor' }),
+    h('line', { x1: 2, y1: 8, x2: 14, y2: 8, stroke: 'currentColor', strokeWidth: 1.2, strokeLinecap: 'round' }),
+    h('circle', { cx: 11, cy: 8, r: 1.4, fill: 'currentColor' }),
+    h('line', { x1: 2, y1: 12, x2: 14, y2: 12, stroke: 'currentColor', strokeWidth: 1.2, strokeLinecap: 'round' }),
+    h('circle', { cx: 8, cy: 12, r: 1.4, fill: 'currentColor' }))
+}
+
+/**
  * The compact always-visible control in `conversation.input.right`: a single
- * 「超参配置」button that toggles the panel. Highlighted when a temperature
+ * 「超参配置」icon button that toggles the panel. Highlighted when a temperature
  * override is active. All editing happens inside the panel.
  */
 function SamplingControl(props) {
@@ -320,9 +333,10 @@ function SamplingControl(props) {
       'data-active': active ? 'true' : undefined,
       disabled: stale,
       title: t('ctl.title'),
+      'aria-label': t('ctl.button'),
       'aria-expanded': open ? 'true' : 'false',
       onClick: function () { setOpen(function (v) { return !v }) },
-    }, t('ctl.button')),
+    }, h(SlidersIcon, null)),
     open ? h('div', { className: 'bwm-backdrop', onClick: function () { setOpen(false) } }) : null,
     open ? h(SamplingPanel, { t: t, api: api }) : null)
 }

@@ -18,9 +18,9 @@
  * declares its own deliberate `reasoningEfforts` (a custom dict, or `false`
  * to opt a model out).
  *
- * The settings service is optional: a deployment without a usable settings
- * service skips with a warning instead of failing the plugin, so this package
- * never hard-depends on it (read via `ctx.get`, not `inject`).
+ * The plugin hard-depends on the `settings` service (declared in `inject`),
+ * so Cordis activates it only once settings is registered — the boot pass is
+ * never racing the provider.
  */
 
 /** Settings namespace carrying the pi-ai provider profiles (`llm-pi-ai:` in settings.yaml). */
@@ -154,8 +154,14 @@ export async function provisionCustomModelReasoning(ctx, label) {
   }
 }
 
-/** No hard service dependency: the settings service is read via `ctx.get`. */
-export const inject = []
+/**
+ * Hard dependency on the `settings` service: Cordis waits for it before
+ * activating this plugin, so the boot provision always sees the service
+ * registered (settings is a fixed dsh-base row on every profile). The
+ * provisioning pass still capability-checks `describe`/`mutate` as defense
+ * against a provider that registers late or partially.
+ */
+export const inject = ['settings']
 
 /**
  * Provision the reasoning menu once at boot, then again whenever the

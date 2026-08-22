@@ -170,17 +170,20 @@ fire('locale')
 await new Promise((resolve) => setTimeout(resolve, 20))
 check(writes.length === 2, '无关命名空间不触发补齐')
 
-/* 5. no settings service: apply still works and never throws. */
+/* 5. a settings service present but without describe/mutate (a provider that
+      registers without a usable face) is skipped defensively and never throws —
+      this is the realistic defensive path now that `inject: ['settings']`
+      guarantees the service is registered before apply. */
 writes.length = 0
 const bareCtx = {
   effect(fn) { return fn() ?? (() => {}) },
   connection: { rpc: { handle: () => () => {} } },
-  get: (name) => (name === 'settings' ? undefined : services[name]),
+  get: (name) => (name === 'settings' ? { describe: 'not-a-function' } : services[name]),
   root: { on: () => () => {} },
 }
 host.apply(bareCtx)
 await new Promise((resolve) => setTimeout(resolve, 20))
-check(writes.length === 0, '无 settings 服务时静默跳过、不影响启动')
+check(writes.length === 0, 'settings 服务缺少 usable 面时静默跳过、不影响启动')
 
 const failed = results.filter(([ok]) => !ok)
 console.log(failed.length === 0 ? '\n全部通过 ✓' : `\n${failed.length} 项失败`)

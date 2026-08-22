@@ -1,7 +1,7 @@
 {
   "name": "@blueriverlhr/dsh-better-webui-search",
   "description": "Web GUI keyless Exa web search: registers an `exa` provider on the ctx.web seam so the native web_search tool works without an API key (anonymous Exa hosted MCP by default, REST upgrade via EXA_API_KEY). Host only.",
-  "version": "0.15.0",
+  "version": "0.16.0",
   "private": true,
   "type": "module",
   "main": "lib/index.js",

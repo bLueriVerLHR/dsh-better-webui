@@ -315,3 +315,93 @@ settings 服务验证）/ `modelOverrides` 条目写入
 - 实机核查 `$DSH_HOME/better-webui/trash/` 为空（`trash.json` 仅 `[]`），
   无遗留会话目录，故无数据需要迁移；删除该空目录。
 - wire 版本维持 3。
+
+---
+
+## 11. v0.20 决策记录：模型采样超参数控制（调研 → 暂缓，未来继续）
+
+> 用户需求（2026-08）：调控模型超参（temperature / 惩罚系数 / logprobs 等），
+> 放设置面板，支持「全局」与「特定 provider 的特定 model」两级 + 全局一览。
+> 原则：不改 dsh 源码、不硬编码。本文记录完整可行性调研（结论：**温度可行、
+> 其余不可达、上游正在演进**）与「暂缓」裁决，作为未来继续的依据。
+
+### 11.1 机制事实（dsh 0.1.0-rc.7 源码逐层核实）
+
+请求链路与注入点：
+
+- **`agent/request` waterfall**（`dsh-agent-loop` `buildRequest`，请求 frozen **前**）
+  是官方设计的「替换冻结调用配置」钩子：`await next()` 拿到机器本会用的
+  `LlmCallConfig { provider, model, reasoningEffort?, temperature?, maxTokens?,
+  stop? }`，**返回替换配置即可切换**（注释原话 "request waterfalls replace them
+  and the loop logs changed snapshots"）。
+- 全链路验证：`agent/request` 替换 → `prepareCall`（`resolveCallFor` 只补
+  maxTokens / reasoningEffort，其余字段 `...config` 原样保留）→ `canonicalHeader`
+  （`config` 整块保留）→ 冻结请求（`...header.config`）→ `llm/stream` →
+  pi-ai adapter 读 `options.temperature`（`dsh-llm-pi-ai/lib/index.js` L869）→
+  wire 请求体 `temperature` 字段。`callConfigEquals` 比对 temperature 但双方同源，
+  校验通过。**temperature 端到端可注入，零 dsh 源码修改**。
+- 作用域：`agent/request` 只覆盖 agent 主线回合（compaction / session-title 等
+  辅助调用直接走 `llm.stream`，不经此钩子）——正是「精准控制智能体行为」所需。
+
+不可达参数（**整条链路无代码路径**）：
+
+| 参数 | 状态 | 依据 |
+|---|---|---|
+| temperature | ✅ 可注入 | `LlmCallConfig` 有字段；pi-ai adapter L869 逐字段透传；wire 构造器发 `temperature` |
+| maxTokens | ✅ 顺带可行 | 同路径 |
+| top_p | ❌ | 三个 wire 构造器（openai-completions / responses / anthropic-messages）都不发 `top_p`；adapter 不透传；schema 无字段 |
+| frequency/presence_penalty | ❌ | 同 top_p，pi-ai 根本没有这些字段 |
+| logprobs | ❌ | 同 top_p |
+
+README 此前「不做模型超参设置页」的旧结论（温度是请求级、top_p 无字段）**对
+top_p 正确、对 temperature 过严**——漏掉了 `agent/request` 这个官方请求级注入点。
+
+### 11.2 现成方案调研（用户要求：搜一搜）
+
+- **`Semidia/dsh-sampling-sliders`**（GitHub，MIT，dsh 插件）：与本文推导**完全同构**
+  的机制（`agent/request` 钩子 + `sampling-sliders` settings 命名空间），但：
+  - **全局唯一值**（一组 temperature/maxTokens 作用于所有 provider），
+    **没有 per-provider / per-model 配置**——不满足「单独设某个 provider 的某个
+    model」这一核心需求；
+  - UI 是输入栏「采样」按钮弹层（`conversation.input.right`），**不在设置面板**，
+    没有「全局一览」表。
+  - 结论：是机制的最小可行性证明，不是本需求的现成答案。
+- 生态其余 dsh 插件（routing / marketplace 等）无同类参数控制实现。
+
+### 11.3 上游演进（未来继续的关键）
+
+- **pi-ai 上游已实现**：`@earendil-works/pi-ai` 0.84.x 起 `StreamOptions` 新增
+  `samplingParams?: Record<string, unknown>`（任意采样参数原样合并进请求体，
+  覆盖 `top_p`/`top_k`/`min_p`/`repetition_penalty` 等），另有模型级
+  `Model.samplingParams`。源头是 `earendil-works/pi` PR #7568（2026-08 合并，
+  "Add support for generic sampling parameters in models.json"）；早年 issue
+  #1392 / #1837 即为「temperature / top_p 等参数支持」的多年 feature request。
+- **瓶颈在 dsh-llm-pi-ai**：最新 `@deepseek-ai/dsh-llm-pi-ai`（0.1.1-rc.2）仍
+  依赖 `pi-ai ^0.82.1`，**未升级到 0.84，也未把 `samplingParams` 从 profile
+  schema / options 接出来**。deepseek-harness 上游无相关 issue。
+- 含义：一旦 dsh 升级 pi-ai 并暴露 `samplingParams`（provider 级或模型级），本
+  功能即可**用与 retry 策略相同的方式**（设置页 → `llm-pi-ai.providers.*`
+  `samplingParams` 写入 → 热加载）干净落地，且能覆盖 top_p / 惩罚系数；在那之前
+  只能做 temperature（+maxTokens）。
+
+### 11.4 拟定设计（本次未实施，供未来落地）
+
+- 新子包 `packages/modelparams`（host + client，遵循「一功能一包」）。
+- **Host**：`agent/request` 拦截器（读 `next()` 返回的 config → 按解析结果返回
+  替换配置）+ 自有 settings 命名空间 `better-webui.modelparams` + RPC 通道
+  `/better-webui-modelparams`（Command 方法表，沿用 settings 包模式）。
+- **配置模型**：三级解析 —— **全局 > provider > provider/model**，最具体者胜出
+  （Chain of Responsibility，纯函数可单测）。
+- **客户端**：设置面板新页「模型采样参数」：全局默认（温度滑杆 + 跟随模型默认）+
+  **全局一览表**（`llm.listProviders()` + `listModels()` 枚举所有 provider/model，
+  每行显示生效值与来源层级）。应用后写 settings.yaml 热加载，无需重启。
+- **设计模式**：拦截器/装饰器（agent/request）、责任链（三级解析）、Command
+  （RPC 方法表）、策略（每参数一种应用策略）、纯函数决策核心（可单测）。
+
+### 11.5 用户裁决（2026-08）
+
+- **本次不做模型超参功能**，记录探索以备未来继续。
+- 粒度确认：全局 > provider > provider/model 三级（maxTokens 不纳入——配置
+  provider 时即可设）。
+- 顺带裁决：**现有 better-webui 设置页重构** —— 重试配置拆成独立设置页，原页
+  只留提示音音量（见 v0.20 实施，§11 之后不另开节）。

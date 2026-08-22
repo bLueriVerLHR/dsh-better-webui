@@ -12,7 +12,7 @@ DeepSeek Harness Web GUI 增强插件 —— **monorepo 元包**：一个"大包
 | **会话活动提示音**（agent 等待输入 / 完成任务 / 回合失败时播放提示音） | `@blueriverlhr/dsh-better-webui-chime` | client |
 | **免密钥 Exa 网络搜索**（无 API key 也能用原生 `web_search`） | `@blueriverlhr/dsh-better-webui-search` | host |
 | **持久化 bash 卡顿卫士**（minimal 预设的持久终端退化为 ~3s 沉默档后自动重置 shell） | `@blueriverlhr/dsh-better-webui-bashguard` | host |
-| **可配置重试策略 + 专属设置页**（调大重试次数/退避；集中管理 better-webui 偏好，含提示音音量） | `@blueriverlhr/dsh-better-webui-settings` | host + client |
+| **可配置重试策略 + 专属设置页**（调大重试次数/退避；better-webui 偏好页 + 独立重试策略页，含提示音音量） | `@blueriverlhr/dsh-better-webui-settings` | host + client |
 
 > 拆分动机与架构（设计模式、风险隔离、维护性）见 [docs/monorepo.md](docs/monorepo.md)。
 
@@ -69,10 +69,14 @@ DeepSeek Harness Web GUI 增强插件 —— **monorepo 元包**：一个"大包
   用户交互时解锁音频上下文，规避浏览器自动播放策略
 - 不覆盖任何原生 UI
 
-> 注：不做「模型超参设置页」。调研确认 dsh 的模型配置 schema（`llm-pi-ai`）原生
-> 只支持 `contextWindow` / `maxTokens` / `input` / `reasoningEfforts` / `compat`，
-> **temperature 是请求级而非模型级配置，top_p 在整个栈（dsh + pi-ai）里都没有
-> 字段**，无法在不改 dsh 本体的前提下做成设置项，因此该需求已放弃。
+> 注：**模型采样超参数（temperature / top_p / 惩罚系数 / logprobs）控制为暂缓
+> 需求**（v0.20 调研后用户裁决暂不做，未来继续）。完整可行性调查见
+> [docs/design.md](docs/design.md) §11：temperature（+maxTokens）可通过官方
+> `agent/request` 钩子干净注入、零 dsh 源码修改；top_p / 惩罚系数 / logprobs 在
+> 整条链路（harness 词汇表 + pi-ai schema + 两个 adapter + 三种 wire 构造器）均
+> 无字段——唯一出路 pi-ai 的 `samplingParams` 透传（上游 0.84 已实现）需等
+> dsh-llm-pi-ai 升级采用。现成插件 `dsh-sampling-sliders`（GitHub，MIT）用同一
+> 机制但**仅全局唯一值、无 per-provider/model、UI 在输入栏**，不满足本需求。
 
 ### 归档会话管理（archive）
 
@@ -148,13 +152,16 @@ dsh 的**持久化** `bash` 工具（minimal 预设及任何挂载它的 preset 
 
 ### 可配置重试策略 + 专属设置页（settings）
 
-设置面板左侧导航里的**better-webui**页（位于「Agent 预设」与「归档会话」之间），
-集中管理 better-webui 的功能偏好，不混入 dsh 自身设置分区。两卡：
+设置面板里**两个** better-webui 专属页（v0.20 起拆分）：**better-webui** 页
+（「Agent 预设」与「重试策略」之间，含提示音音量）与**重试策略**页（紧跟
+better-webui 页，含重试卡），集中管理 better-webui 的功能偏好，不混入 dsh
+自身设置分区。
 
 **重试策略**——DSH 原生模型请求重试默认 `maxRetries: 2` 且没有可调的入口
-（`dsh-llm-retry` 按 provider 读 `llm-pi-ai.providers.*.retryPolicy`）。本卡提供
-**全局默认策略**：重试次数 + 初始延迟 + 最大延迟 + 抖动比例，点「应用」后由宿主
-通过 `settings` 服务幂等地写入**每个未自行声明 `retryPolicy` 的 provider**：
+（`dsh-llm-retry` 按 provider 读 `llm-pi-ai.providers.*.retryPolicy`）。独立
+「重试策略」页提供**全局默认策略**：重试次数 + 初始延迟 + 最大延迟 + 抖动比例，
+点「应用」后由宿主通过 `settings` 服务幂等地写入**每个未自行声明 `retryPolicy`
+的 provider**：
 
 - **不覆盖手写**：某个 provider 若已声明自己的 `retryPolicy`（与插件上次写入的
   `lastApplied` 标记不同），页面上标为「手写配置（不覆盖）」并跳过；想单独设的
@@ -168,8 +175,8 @@ dsh 的**持久化** `bash` 工具（minimal 预设及任何挂载它的 preset 
 - **Provider 状态**：页面列出每个 provider 当前是「未配置（将应用全局默认）」「已应用
   全局策略」「沿用上次应用的策略」还是「手写配置（不覆盖）」
 
-**会话提示音**——开关 + 音量滑块（0-100，0 静音），v0.19 起**从 dsh 通用设置移入**
-本页。纯客户端 localStorage（键 `better-webui:notify:enabled` / `:volume` 不变，
+**会话提示音**——better-webui 页里保留开关 + 音量滑块（0-100，0 静音）。
+纯客户端 localStorage（键 `better-webui:notify:enabled` / `:volume` 不变，
 老用户设置不丢），chime 包的播放逻辑继续读这两个键，无需重启。
 
 生效方式：宿主改动（RPC 通道 + 设置命名空间）→ **重启 `dsh web`**；客户端页面

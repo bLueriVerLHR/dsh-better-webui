@@ -40,7 +40,7 @@ dsh-better-webui/                        # 元包 @blueriverlhr/dsh-better-webui
     chime/         client                会话活动提示音（dock；音量/开关在 better-webui 设置页）
     search/        host                  Exa 搜索 provider（含 web 行覆盖）
     bashguard/     host                  持久化 bash 卡顿卫士（tools/execute 守卫）
-    settings/      host + client         可配置重试策略 + better-webui 专属设置页（RPC /better-webui-settings）
+    settings/      host + client         可配置重试策略（独立设置页）+ better-webui 设置页（提示音音量）（RPC /better-webui-settings）
   tests/
     support/                             共享 jsdom 测试骨架（client-harness / primitives-stub）
     composition.mjs                      patch 组合守卫
@@ -74,7 +74,7 @@ dsh-better-webui/                        # 元包 @blueriverlhr/dsh-better-webui
 | chime | `lib/index.js`（空 apply） | ✓ dock | platform web | inject: slots/locale | 1 行 |
 | search | `lib/index.js`（provider 注册） | — | — | 可选 web | 1 行 + **web 行 searchProvider 覆盖** |
 | bashguard | `lib/index.js`（waterfall 守卫） | — | — | 可选 agentPresets/terminals | 1 行 |
-| settings | `lib/index.js`（RPC 通道 + 设置命名空间） | ✓ 设置页 | platform web | inject: connection/settings | 1 行 |
+| settings | `lib/index.js`（RPC 通道 + 设置命名空间） | ✓ 两个设置页 | platform web | inject: connection/settings | 1 行 |
 
 **跨包约束（不能破坏，否则 HMR/挂载异常）：**
 
@@ -82,12 +82,13 @@ dsh-better-webui/                        # 元包 @blueriverlhr/dsh-better-webui
   `-bashguard` / `-settings`。不要重复使用。
 - **插槽 id 全局唯一**：archive 用 `better-webui-archive`（settings.section），
   chime 用 `better-webui-notify`（conversation.input.dock），settings 用
-  `better-webui-settings`（settings.section）。
+  `better-webui-settings` 与 `better-webui-retry`（两个 settings.section，v0.20
+  把重试拆成独立页）。
 - **locale NS 独立**：archive 用 `better-webui-archive`，chime 用 `better-webui-notify`，
-  settings 用 `better-webui-settings`。
+  settings 用 `better-webui-settings`（两个页共享同一 NS）。
 - **style 标签 id 独立**：archive 用 `better-webui-style`，chime 用
   `better-webui-notify-style`，settings 用 `better-webui-settings-style`
-  （HMR 按标签认领）。
+  （两个页共享同一标签，HMR 按标签认领）。
 - **RPC 通道唯一**：archive 用 `/better-webui`，settings 用 `/better-webui-settings`，
   各自带 `WIRE_VERSION` 握手。
 - **localStorage 键保持稳定**：`better-webui:notify:enabled` / `:volume` 拆分后

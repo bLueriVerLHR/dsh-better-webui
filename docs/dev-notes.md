@@ -693,3 +693,23 @@ export function apply(ctx) {
   首次应用/幂等/改策略更新 ours/跳过 custom；smoke.mjs 用真实 jsdom + RPC stub
   驱动页面（4 输入框、apply→read、恢复默认、音量 localStorage）。
 
+### 12.7 v0.20：重试策略拆成独立设置页（settings 包内重构）
+
+用户反馈 better-webui 设置页里重试卡字段多、占面积大；模型超参需求（design.md
+§11）暂缓后，顺带把重试配置**拆成独立设置页**，原页只留提示音音量。
+
+- **client.bundle.js**：`SettingsPage` 拆为 `BetterWebuiPage`（id
+  `better-webui-settings`，order 25，只渲染 ChimeCard）与 `RetryPage`（id
+  `better-webui-retry`，order 26，紧跟 better-webui 页，只渲染 RetryCard）。
+  `apply()` 现在注册**两个** `settings.section` 条目。
+- **同源同包**：两个页共享同一 locale NS（`better-webui-settings`）、同一 style
+  标签（`better-webui-settings-style`）、同一 RPC 通道（`/better-webui-settings`）。
+  只有重试页需要 `api`（RPC），better-webui 页纯客户端、不声明 inject 面。
+- **host 零改动**：重试逻辑/命名空间/RPC 全在 host half，纯客户端页面布局变化，
+  无需重启宿主。
+- **测试**：smoke.mjs 改为断言两个 settings.section 注册 + 分别渲染两页
+  （重试页：4 输入框/provider 状态/apply/restore；better-webui 页：提示音开关 +
+  音量、且确认不含重试输入框/provider 列表）。
+- 新增 locale 键 `retry.pageTitle` / `retry.pageDesc`（页标题/简介，独立于
+  `retry.title`/`retry.desc` 卡片文案）。
+

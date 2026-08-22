@@ -2,22 +2,20 @@
  * better-webui settings browser half source. build-package wraps this file into
  * the `window.__ModuleLoader__.load` factory envelope emitted as lib/client.js.
  *
- * One additive contribution — no native surface is replaced:
- * - `settings.section` (id `better-webui-settings`): one dedicated settings
- *   page in the sidebar nav, ordered between the agent-preset page and the
- *   archived-sessions page. It hosts the better-webui feature preferences
- *   that used to live scattered across the native settings:
- *     • 重试策略 (retry policy): the global LLM request-retry policy
- *       (maxRetries + exponential backoff) provisioned into every llm-pi-ai
- *       provider through the host half — the "raise the retry count" knob the
- *       native UI never exposed.
- *     • 提示音 (session chime): the on/off switch + volume slider moved out of
- *       the native General settings (the chime package kept only the dock +
- *       audio and reads these same localStorage keys).
- *   Both preferences live under one page so nothing mixes with dsh's own
+ * Two additive contributions — no native surface is replaced, both are
+ * settings.section pages inside the sidebar nav (one feature package owns
+ * both, so they share one locale NS and one style tag):
+ *   - `settings.section` (id `better-webui-settings`, order 25): the better-webui
+ *     preference hub page, ordered between the agent-preset page and the
+ *     archive page. v0.20 起只保留会话提示音卡（重试策略已拆去独立页）。
+ *   - `settings.section` (id `better-webui-retry`, order 26): 独立的「重试策略」
+ *     设置页 —— 把原来的重试卡从 better-webui 页拆出来独占一页（它字段多、
+ *     占面积大），与 better-webui 页同源同包，走同一个 `/better-webui-settings`
+ *     RPC 通道。
+ *   Both preferences live in the settings panel so nothing mixes with dsh's own
  *   settings sections.
  *
- * The retry card talks to the host through the `/better-webui-settings` RPC
+ * The retry page talks to the host through the `/better-webui-settings` RPC
  * channel (ping / read / apply); the chime card is pure client (localStorage),
  * exactly like the row it replaces.
  */
@@ -43,6 +41,8 @@ var DICT = {
     'settings.desc': '本页面集中管理 Better WebUI 的功能偏好，不混入 dsh 自身设置。',
     'settings.stale': '宿主插件是旧版本，请重启 dsh web 后再操作',
 
+    'retry.pageTitle': '重试策略',
+    'retry.pageDesc': '模型请求失败后的重试次数与指数退避（写入 llm-pi-ai 各 provider）。默认仅 2 次，可在此调大。',
     'retry.title': '重试策略',
     'retry.desc': '模型请求失败后的重试次数与指数退避（写入 llm-pi-ai 各 provider）。默认仅 2 次，可在此调大。',
     'retry.maxRetries': '重试次数',
@@ -71,6 +71,8 @@ var DICT = {
     'settings.desc': 'Preference hub for Better WebUI features, kept apart from dsh\'s own settings.',
     'settings.stale': 'Host plugin is an old version — restart dsh web before acting',
 
+    'retry.pageTitle': 'Retry policy',
+    'retry.pageDesc': 'Retry count and exponential backoff for failed model requests (written into every llm-pi-ai provider). Default is only 2 — raise it here.',
     'retry.title': 'Retry policy',
     'retry.desc': 'Retry count and exponential backoff for failed model requests (written into every llm-pi-ai provider). Default is only 2 — raise it here.',
     'retry.maxRetries': 'Max retries',
@@ -408,20 +410,34 @@ function ChimeCard(props) {
 }
 
 /**
- * The better-webui settings page: one dedicated nav entry (order 25, between
- * agent-presets and archive). It renders the retry-policy card and the
- * session-chime card. The retry card owns its own stale/busy state, so the
- * shell renders only the page chrome.
+ * The better-webui settings page (id `better-webui-settings`, order 25): one
+ * dedicated nav entry between agent-presets and archive. v0.20 起只渲染会话
+ * 提示音卡（重试策略已拆去独立页 better-webui-retry），纯客户端、无需 RPC。
  */
-function SettingsPage(props) {
-  var api = props.api
+function BetterWebuiPage(props) {
   var t = props.t
 
   return h('div', { className: 'bwts-page' },
     h('h2', { className: 'bwts-title' }, t('settings.title')),
     h('p', { className: 'bwts-intro' }, t('settings.desc')),
-    h(RetryCard, { t: t, api: api }),
     h(ChimeCard, { t: t }))
+}
+
+/**
+ * The dedicated retry-policy page (id `better-webui-retry`, order 26, right
+ * after the better-webui page): hosts the retry card split out of the
+ * better-webui page — it fields four numeric inputs + a provider status list,
+ * which is too much real estate to share a page with the chime card. Talks to
+ * the host through the same `/better-webui-settings` RPC channel.
+ */
+function RetryPage(props) {
+  var api = props.api
+  var t = props.t
+
+  return h('div', { className: 'bwts-page' },
+    h('h2', { className: 'bwts-title' }, t('retry.pageTitle')),
+    h('p', { className: 'bwts-intro' }, t('retry.pageDesc')),
+    h(RetryCard, { t: t, api: api }))
 }
 
 exports.inject = ['slots', 'locale', 'connection']
@@ -455,14 +471,22 @@ exports.apply = function apply(ctx) {
   }
 
   ctx.slots.inject('settings.section', function () {
-    return ctx.slots.register({
+    // better-webui 偏好页：只含会话提示音（order 25，agent-preset 之后）。
+    ctx.slots.register({
       name: 'settings.section',
       id: 'better-webui-settings',
-      // Between the agent-preset page (order 20) and the archive page (order 30).
       order: 25,
       label: function () { return ctx.locale.bind(NS)('settings.title') },
       locale: NS,
+    }, BetterWebuiPage)
+    // 重试策略独立页：紧接 better-webui 页之后（order 26），独占一页。
+    ctx.slots.register({
+      name: 'settings.section',
+      id: 'better-webui-retry',
+      order: 26,
+      label: function () { return ctx.locale.bind(NS)('retry.pageTitle') },
+      locale: NS,
       inject: function () { return { api: api } },
-    }, SettingsPage)
+    }, RetryPage)
   })
 }

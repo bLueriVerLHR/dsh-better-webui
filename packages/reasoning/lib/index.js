@@ -165,9 +165,23 @@ export const inject = ['settings']
 
 /**
  * Provision the reasoning menu once at boot, then again whenever the
- * llm-pi-ai section changes (settings.yaml hot-reloads, so a model added by
- * hand is provisioned too). The pass is idempotent — a pass with nothing
- * missing writes nothing — so our own writes cannot ping-pong.
+ * llm-pi-ai section becomes live or changes. The pass is idempotent — a pass
+ * with nothing missing writes nothing — so our own writes cannot ping-pong.
+ *
+ * No timers: the triggers are two events, both broadcast on the global event
+ * bus (`ctx.root.on` sees them even while the emitting service is not
+ * registered yet):
+ *
+ * - `llm/adapters-updated` — dsh-llm-pi-ai synchronously emits this from
+ *   `registerAdapter`/`registerConfigurableProviders` during its own apply,
+ *   the exact moment the `llm-pi-ai` section becomes live. So the provision
+ *   runs the instant the namespace exists — no polling, no hard-coded delay.
+ * - `settings/document-updated` — re-provisions when the user edits
+ *   settings.yaml (the file provider hot-reloads and publishes the section).
+ *
+ * The immediate `provision()` at the top covers the persisted case (settings
+ * already upgraded from a previous boot): it finds nothing missing and writes
+ * nothing.
  * @param {import('@deepseek-ai/cordis').Context} ctx - host plugin context.
  */
 export function apply(ctx) {
@@ -177,16 +191,12 @@ export function apply(ctx) {
     })
   }
   provision()
-  // A second pass after boot settles covers late namespace registration: the
-  // pi-ai adapter registers its settings section during its own apply, and if
-  // that lands after this plugin's boot pass no document event fires to retry.
-  const lateTimer = setTimeout(() => provision(), 2000)
-  // ctx.effect runs its callback immediately and stores the RETURNED value as
-  // the disposer — so the callback must return the clear, never call it. Calling
-  // clearTimeout here (as a statement) would kill the late timer at apply time
-  // and the fallback pass would never fire.
-  ctx.effect(() => () => clearTimeout(lateTimer), 'better-webui-reasoning: late provision')
   if (typeof ctx.root?.on === 'function') {
+    // Fired synchronously when the pi-ai adapter (or any adapter) registers or
+    // replaces routes/directory — i.e. the moment llm-pi-ai config goes live.
+    // Idempotent, so extra fires (boot ordering, other adapters) are harmless.
+    const disposeAdapterWatcher = ctx.root.on('llm/adapters-updated', () => provision())
+    ctx.effect(() => disposeAdapterWatcher, 'better-webui-reasoning: adapter watcher')
     const disposeSettingsWatcher = ctx.root.on('settings/document-updated', (ns) => {
       if (ns !== LLM_PI_AI_NS) return
       provision()

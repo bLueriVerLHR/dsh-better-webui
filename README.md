@@ -109,6 +109,11 @@ low: low, medium: medium, high: high, xhigh: xhigh, max: max }`，
 - **不覆盖已有声明**：已写 `reasoningEfforts`（自定义 dict 或 `false`）的模型从不被改动
 - **退出自由**：某个不支持推理的模型，在 `settings.yaml` 里给它
   `reasoningEfforts: false` 即可恢复无菜单状态
+- **事件驱动、无需等待**：补齐由 `llm/adapters-updated`（pi-ai 适配器注册/更新
+  的瞬间）与 `settings/document-updated`（settings.yaml 热重载）两个事件触发，
+  无定时器、无轮询——重启后 `llm-pi-ai` 一生效就补齐
+- **幂等持久化**：补齐写回 `settings.yaml`，下次开机已全档则不再写入、不干扰，
+  无需每次手动调整
 - 生效路径：宿主改动 → **重启 `dsh web`**（宿主侧启动时加载）
 
 不覆盖任何原生 UI；不修改 dsh 本体（升级 dsh 不受影响）。

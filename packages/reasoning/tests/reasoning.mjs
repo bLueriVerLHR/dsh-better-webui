@@ -185,14 +185,13 @@ host.apply(bareCtx)
 await new Promise((resolve) => setTimeout(resolve, 20))
 check(writes.length === 0, 'settings 服务缺少 usable 面时静默跳过、不影响启动')
 
-/* 6. REGRESSION (boot race): on a real boot the reasoning plugin activates on
-      the `settings` service BEFORE dsh-llm-pi-ai registers its `llm-pi-ai`
-      section, so the immediate pass has no namespace and skips. The 2s late
-      timer is the only catch — and `ctx.effect` runs its callback immediately,
-      so the effect must RETURN the clear-disposer, never call clearTimeout at
-      apply time (calling it killed the fallback and provisioning never ran).
-      Simulate: namespace unregistered at apply → registered after 100ms →
-      the late timer must still provision it. */
+/* 6. REGRESSION (boot race, event-driven): on a real boot the reasoning plugin
+      activates on the `settings` service BEFORE dsh-llm-pi-ai registers its
+      `llm-pi-ai` section, so the immediate pass has no namespace and skips.
+      dsh-llm-pi-ai synchronously emits `llm/adapters-updated` the moment it
+      registers its adapter — the exact "section is live" signal. Simulate:
+      namespace unregistered at apply → adapter event fires → provision runs
+      immediately (no timer, no polling). */
 writes.length = 0
 let lateRegistered = false
 const raceUser = { providers: { 'custom-gateway': { models: [{ id: 'plain-model' }] } } }
@@ -215,28 +214,43 @@ const raceCtx = {
   root: { on: (event, callback) => { raceListeners.push([event, callback]); return () => {} } },
 }
 host.apply(raceCtx)
-await new Promise((resolve) => setTimeout(resolve, 100))
 check(writes.length === 0, '命名空间晚注册时，apply 时立即补齐不写入')
+check(raceListeners.some(([event]) => event === 'llm/adapters-updated'),
+  'apply 注册了 llm/adapters-updated 监听（事件驱动，无定时器）')
 lateRegistered = true
-await new Promise((resolve) => setTimeout(resolve, 2400))
-check(writes.length === 1, '命名空间晚注册时由晚定时器补齐（回归：晚定时器不被立即清除）')
+for (const [event, callback] of raceListeners) {
+  if (event === 'llm/adapters-updated') callback() // simulate dsh-llm-pi-ai registering its adapter → section live
+}
+await new Promise((resolve) => setTimeout(resolve, 20))
+check(writes.length === 1, '命名空间晚注册时由 adapters-updated 事件立即补齐（无定时器）')
 const raceOp = writes[0]?.ops.find((op) => op.path.join('.') === 'providers.custom-gateway.models')
-check(raceOp !== undefined && raceOp.value[0].reasoningEfforts !== undefined, '晚注册后写入的是 models 全档位数组')
+check(raceOp !== undefined && raceOp.value[0].reasoningEfforts !== undefined, '事件补齐写入的是 models 全档位数组')
+// Idempotent: a second adapter event with nothing missing writes nothing.
+for (const [event, callback] of raceListeners) {
+  if (event === 'llm/adapters-updated') callback()
+}
+await new Promise((resolve) => setTimeout(resolve, 20))
+check(writes.length === 1, '全已声明时 adapters-updated 再次触发不写入')
 
-/* 7. REGRESSION (fast, structural): every `ctx.effect` callback in apply must
-      RETURN a disposer function — a callback that calls clearTimeout as a
-      statement returns undefined and is exactly the bug that cleared the late
-      timer at apply time. */
+/* 7. REGRESSION (structural): every `ctx.effect` callback in apply must RETURN
+      a disposer function — the bug that cleared the late timer was a callback
+      that called clearTimeout as a statement (returned undefined). With the
+      event-driven design there is no timer at all; both watchers still return
+      disposers so they unwind cleanly on unload. */
 const effectReturns = []
+const captureListeners = []
 const captureCtx = {
   effect(fn) { const result = fn(); effectReturns.push(result); return result ?? (() => {}) },
   connection: { rpc: { handle: () => () => {} } },
   get: (name) => (name === 'settings' ? { describe: 'not-a-function' } : services[name]),
-  root: { on: () => () => {} },
+  root: { on: (event, callback) => { captureListeners.push([event, callback]); return () => {} } },
 }
 host.apply(captureCtx)
 check(effectReturns.length === 2 && effectReturns.every((r) => typeof r === 'function'),
-  'apply 的 ctx.effect 回调均返回 disposer（晚定时器不被立即清除）')
+  'apply 的 ctx.effect 回调均返回 disposer')
+check(captureListeners.some(([event]) => event === 'llm/adapters-updated')
+  && captureListeners.some(([event]) => event === 'settings/document-updated'),
+  'apply 同时监听 llm/adapters-updated 与 settings/document-updated')
 
 const failed = results.filter(([ok]) => !ok)
 console.log(failed.length === 0 ? '\n全部通过 ✓' : `\n${failed.length} 项失败`)

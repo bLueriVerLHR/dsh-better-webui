@@ -1,7 +1,7 @@
 {
   "name": "@blueriverlhr/dsh-better-webui-reasoning",
   "description": "Web GUI custom-model reasoning provisioning: idempotently grants standard off/low/medium/high reasoning levels to custom models that declare none, so the native composer's reasoning-effort menu works for them. Host only, zero UI.",
-  "version": "0.17.0",
+  "version": "0.18.0",
   "private": true,
   "type": "module",
   "main": "lib/index.js",

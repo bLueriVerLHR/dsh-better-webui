@@ -635,3 +635,61 @@ export function apply(ctx) {
 - 持久化：下次开机已全档 → 不写不干扰，composer 直接有七档，无需手动调整。
 - 生效路径：host 改动 → 重启 `dsh web`。
 
+### 12.6 v0.19：可配置重试策略 + better-webui 专属设置页（settings 包）
+
+**需求**：dsh 原生重试默认 `maxRetries: 2` 太少且不可调。用户要在设置里开一个
+**专属 better-webui 的面板**（与通用/模型/插件/Agent 预设/归档会话并列），
+把重试次数与退避做成可调项，并把提示音音量从通用设置**移入**该页，不和 dsh
+自身设置混放。
+
+**调研（dsh 机制）**：
+- 重试由 `dsh-base` 里已启用的 `@deepseek-ai/dsh-llm-retry`（行 id `llm-retry`）
+  执行，挂在 agent loop 的 `agent/request-error` waterfall 上。策略是**每 provider
+  一份**：`llm-pi-ai.providers.<route>.retryPolicy`（`mode: normal|always` +
+  `maxRetries` + `retryableCodes` + `backoff`）。没有全局旋钮。
+- 默认值（`dsh-llm/lib/types/retry-policy.js`）：`maxRetries: 2`、
+  `backoff: { initialDelayMs: 500, maxDelayMs: 10000, jitterRatio: 0.1 }`、
+  `retryableCodes: [EMPTY_RESPONSE, RATE_LIMIT, SERVER, TIMEOUT, TRANSPORT]`。
+- **热加载**：pi-ai 适配器 `providerRetryPolicy()` 每次实时读 `profiles()`；
+  `settings` 变更 → `setSource` → `onChange` → 重新 resolve（含 `resolveRetryPolicy`）。
+  所以改 `settings.yaml` 的 `retryPolicy` **无需重启**。
+
+**设计（与用户确认的三点，全部采纳推荐项）**：
+1. **全局默认**：一套控件（maxRetries + 初始延迟 + 最大延迟 + 抖动）写进**每个未
+   自行声明 retryPolicy 的 provider**；已手写自定义策略的 provider 不覆盖。
+2. **全参数**：不只是重试次数，退避三参数也暴露，带「恢复默认」。
+3. **彻底移走**：音量/开关从 `settings.general.item` 移除，只在 better-webui 页。
+   localStorage 键不变（`better-webui:notify:enabled` / `:volume`），老用户设置不丢。
+
+**实现要点**：
+- 新包 `packages/settings`（host + client），行 id `better-webui-settings`，
+  插槽 `settings.section` order 25（Agent 预设 20 与归档 30 之间），标签「better-webui」。
+- **设置命名空间 `better-webui`**：schema 为
+  `{ retry: { policy, lastApplied } }`（policy 四标量；lastApplied 是"上次写入
+  provider 的策略"标记）。作用有二——(a) 持久化全局策略，重启不丢；(b) 区分
+  "我们写过的"（= lastApplied，可再更新）与"手写的"（≠ lastApplied，跳过）。
+- **幂等 provision**（`planRetryOps`）：每个 provider 写条件 = 当前无 retryPolicy，
+  或当前==lastApplied 且 != 目标策略；已==目标策略的跳过（不写，防 ping-pong）。
+  写入形状是 DSH 自己的 `{ mode: 'normal', maxRetries, backoff: {...} }`
+  （`policyToRetryPolicy`，省略 retryableCodes → DSH 默认）。
+- **写路径**：RPC `apply` → `planRetryOps` → `settings.mutate('llm-pi-ai', ops, rev)`
+  → `settings.mutate('better-webui', [policy, lastApplied], rev)`；仅当策略真的变才写
+  命名空间，避免自触发 watcher 死循环。boot + `scope.watch` + `settings/document-updated`
+  三个触发点，都走同一幂等 provision。
+- **client 跨包值导入被禁**：settings 页的提示音卡不 import chime，而是硬编码同一对
+  localStorage 键字符串（稳定契约，monorepo.md §4 已文档化）。chime 包保留 dock +
+  播放 + `readNotifyPrefs`（删 `writeNotifyPref` 与设置行）。
+
+**经验**：
+- 一个"全局默认 + 不覆盖手写"的配置注入，关键是**区分机器写入与手写**。这里用
+  `lastApplied` 标记（持久化在自家命名空间）——比 reasoning 的"legacy 默认即机器
+  写入"更通用，因为重试策略的值由用户选、不是固定默认。
+- **幂等必须连"写路径本身"一起防**：光让 provider 不重复写不够，还要让"写命名空间"
+  在值未变时跳过，否则自己的写会触发 watcher → 再 provision → 再写…… 用 `policyEqual`
+  判 `changed`。
+- 写入 DSH 自己的 schema 形状（而非自造格式），让原生 `dsh-llm-retry` 原样执行，
+  是最低耦合、最不可能被升级破坏的路径。
+- 测试：host.mjs 用可变的 mock settings 服务（`applyOps` 模拟 mutate），覆盖
+  首次应用/幂等/改策略更新 ours/跳过 custom；smoke.mjs 用真实 jsdom + RPC stub
+  驱动页面（4 输入框、apply→read、恢复默认、音量 localStorage）。
+

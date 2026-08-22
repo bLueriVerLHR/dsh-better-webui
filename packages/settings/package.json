@@ -1,6 +1,6 @@
 {
-  "name": "@blueriverlhr/dsh-better-webui-archive",
-  "description": "Web GUI archive-session management: view / restore / two-step permanent delete for sessions hidden by the native archive. Host RPC channel + settings page.",
+  "name": "@blueriverlhr/dsh-better-webui-settings",
+  "description": "Web GUI dedicated better-webui settings page: configurable LLM retry policy (max retries + exponential backoff) provisioned into every llm-pi-ai provider, plus the session-chime switch and volume moved out of General settings. Host RPC channel + settings page.",
   "version": "0.19.0",
   "private": true,
   "type": "module",

@@ -30,7 +30,12 @@ const CLIENT_PACKAGES = [
   {
     dir: 'packages/chime',
     id: '@blueriverlhr/dsh-better-webui-chime',
-    slots: ['conversation.input.dock', 'settings.general.item'],
+    slots: ['conversation.input.dock'],
+  },
+  {
+    dir: 'packages/settings',
+    id: '@blueriverlhr/dsh-better-webui-settings',
+    slots: ['settings.section'],
   },
 ]
 

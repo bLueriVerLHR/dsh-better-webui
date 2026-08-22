@@ -6,7 +6,7 @@ Object.defineProperty(exports, Symbol.toStringTag, { value: 'Module' });
  * better-webui chime browser half source. build-package wraps this file into
  * the `window.__ModuleLoader__.load` factory envelope emitted as lib/client.js.
  *
- * Two additive contributions (no native surface is replaced):
+ * One additive contribution (no native surface is replaced):
  * - `conversation.input.dock` (id `better-webui-notify`): session activity
  *   chimes (sound only, no popup). When the open session's agent starts
  *   waiting for user input (an ask_user_question / approval / plan-review
@@ -14,64 +14,28 @@ Object.defineProperty(exports, Symbol.toStringTag, { value: 'Module' });
  *   the plugin plays a short synthesized chime (Web Audio API — no asset
  *   file). Detection reads the dock's ConversationSnapshot owner prop and
  *   fires only on state transitions, never on every render.
- * - `settings.general.item` (id `better-webui-notify`): the chime's on/off
- *   switch and volume slider in the General settings section, persisted to
- *   localStorage — pure client, so no host data is written and no restart is
- *   needed.
  *
- * The chime is deliberately a separate package from the archive page: it has
- * no host dependency, no RPC, and its failure surface is its own fiber.
+ * The chime's on/off switch and volume slider used to live in a
+ * `settings.general.item` row; since v0.19 they live on the dedicated
+ * "better-webui" settings page (the better-webui-settings package), which
+ * reads and writes the SAME localStorage keys (`better-webui:notify:enabled` /
+ * `:volume`). This package keeps only the dock + audio; the prefs stay pure
+ * client (no host data, no restart).
  */
 
 var React = require('react')
 var h = React.createElement
-var useState = React.useState
 var useEffect = React.useEffect
 var useRef = React.useRef
 
 var NS = 'better-webui-notify'
 
 var DICT = {
-  zh: {
-    'notify.enabled.title': '会话提示音',
-    'notify.enabled.desc': 'Agent 等待输入或完成回合时播放提示音',
-    'notify.volume.title': '提示音音量',
-    'notify.volume.desc': '0 为静音，100 为最大音量',
-  },
-  en: {
-    'notify.enabled.title': 'Session chime',
-    'notify.enabled.desc': 'Play a chime when the agent waits for input or finishes a turn',
-    'notify.volume.title': 'Chime volume',
-    'notify.volume.desc': '0 mutes, 100 is loudest',
-  },
+  zh: {},
+  en: {},
 }
 
 var CSS = [
-  /* General-settings row: session chime on/off + volume. The switch mirrors
-     the native dsh switch (button[role=switch] + track + thumb, theme tokens);
-     the volume is a theme-accented range with a live value readout. */
-  '.bwt-notify-row{display:flex;align-items:center;gap:16px;width:100%;}',
-  '.bwt-notify-rowtext{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;}',
-  '.bwt-notify-rowtitle{font-size:14px;line-height:20px;color:var(--dsw-alias-label-primary);}',
-  '.bwt-notify-rowdesc{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary);}',
-  /* native dsh switch anatomy (trajectory toolbar) */
-  '.bwt-switch{display:inline-flex;flex:none;align-items:center;justify-content:center;width:32px;height:20px;padding:0;border:none;background:transparent;cursor:pointer;}',
-  '.bwt-switch:disabled{cursor:default;}',
-  '.bwt-switch:focus-visible{outline:1px solid var(--dsw-alias-state-business-primary);outline-offset:1px;border-radius:999px;}',
-  '.bwt-switch-track{background:var(--dsw-alias-border-l2);width:20px;height:10px;transition:background-color .12s var(--ds-ease-in-out);border-radius:5px;flex:none;display:inline-block;position:relative;}',
-  '.bwt-switch-track[data-on=true]{background:var(--dsw-alias-state-business-primary);}',
-  '.bwt-switch-thumb{background:var(--dsw-alias-bg-layer-1);width:6px;height:6px;transition:transform .12s var(--ds-ease-in-out);border-radius:50%;position:absolute;top:2px;left:2px;}',
-  '.bwt-switch-track[data-on=true] .bwt-switch-thumb{transform:translate(10px);}',
-  '.bwt-switch:disabled .bwt-switch-track{opacity:.4;}',
-  /* theme-accented volume slider */
-  '.bwt-volume{flex:none;display:flex;align-items:center;gap:8px;width:150px;flex-shrink:0;margin-left:auto;}',
-  '.bwt-volume input[type=range]{flex:1;min-width:0;appearance:none;-webkit-appearance:none;height:10px;margin:0;cursor:pointer;background:transparent;}',
-  '.bwt-volume input[type=range]::-webkit-slider-runnable-track{height:4px;border-radius:2px;background:var(--dsw-alias-border-l2);}',
-  '.bwt-volume input[type=range]::-webkit-slider-thumb{appearance:none;-webkit-appearance:none;width:12px;height:12px;margin-top:-4px;border-radius:50%;background:var(--dsw-alias-state-business-primary);border:none;box-shadow:0 1px 2px rgba(0,0,0,.25);}',
-  '.bwt-volume input[type=range]::-moz-range-track{height:4px;border-radius:2px;background:var(--dsw-alias-border-l2);}',
-  '.bwt-volume input[type=range]::-moz-range-thumb{width:12px;height:12px;border-radius:50%;background:var(--dsw-alias-state-business-primary);border:none;}',
-  '.bwt-volume input[type=range]:disabled{cursor:default;opacity:.4;}',
-  '.bwt-volume-value{flex:none;width:24px;font-size:12px;color:var(--dsw-alias-label-secondary);text-align:right;font-variant-numeric:tabular-nums;}',
 ].join('\n')
 
 var NOTIFY_ENABLED_KEY = 'better-webui:notify:enabled'
@@ -93,15 +57,6 @@ function readNotifyPrefs() {
     // localStorage unavailable → safe defaults.
   }
   return { enabled: enabled, volume: volume }
-}
-
-/** Persist one chime pref (best-effort; failures fall back to defaults). */
-function writeNotifyPref(key, value) {
-  try {
-    window.localStorage.setItem(key, String(value))
-  } catch (error) {
-    // Not persisted; the current session still keeps the live state.
-  }
 }
 
 var notifyAudioCtx = null
@@ -244,89 +199,6 @@ function NotifyDock(props) {
   return null
 }
 
-/**
- * General-settings rows for the session chime: an on/off switch plus a volume
- * slider. Registered as settings.general.item entries (additive, root scope);
- * the owner passes no props, so each row draws its own title/desc/control
- * (mirroring the shipped rows) and persists through localStorage — no host
- * data is written and no restart is needed.
- */
-function NotifySettingsRow(props) {
-  var t = props.t
-  var enabledState = useState(function () { return readNotifyPrefs().enabled })
-  var enabled = enabledState[0]
-  var setEnabled = enabledState[1]
-  var volumeState = useState(function () { return readNotifyPrefs().volume })
-  var volume = volumeState[0]
-  var setVolume = volumeState[1]
-  var volumeInput = useRef(null)
-
-  var toggle = function () {
-    var next = !enabled
-    setEnabled(next)
-    writeNotifyPref(NOTIFY_ENABLED_KEY, next ? '1' : '0')
-    if (next) playNotifyChime('done') // preview the chime when re-enabled
-  }
-
-  // Listen to the slider's native events (React's synthetic onChange for a
-  // controlled range is hard to drive in jsdom; native listeners read the DOM
-  // value directly and behave identically in the browser and in tests).
-  // `input` (dragging) only persists the value; `change` (release) previews
-  // the chime once, so it does not spam a beep on every tick while dragging.
-  useEffect(function () {
-    var node = volumeInput.current
-    if (node === null || node === undefined) return
-    var onInput = function () {
-      var next = parseInt(node.value, 10)
-      if (isNaN(next)) return
-      setVolume(next)
-      writeNotifyPref(NOTIFY_VOLUME_KEY, String(next))
-    }
-    var onChange = function () {
-      playNotifyChime('done') // preview only when the user releases the slider
-    }
-    node.addEventListener('input', onInput)
-    node.addEventListener('change', onChange)
-    return function () {
-      node.removeEventListener('input', onInput)
-      node.removeEventListener('change', onChange)
-    }
-  }, [])
-
-  return h('div', { className: 'bwt-notify-row' },
-    h('div', { className: 'bwt-notify-rowtext' },
-      h('div', { className: 'bwt-notify-rowtitle' }, t('notify.enabled.title')),
-      h('div', { className: 'bwt-notify-rowdesc' }, t('notify.enabled.desc'))),
-    h('button', {
-      type: 'button',
-      className: 'bwt-switch',
-      role: 'switch',
-      'aria-checked': enabled ? 'true' : 'false',
-      'aria-label': t('notify.enabled.title'),
-      onClick: toggle,
-    },
-      h('span', {
-        className: 'bwt-switch-track',
-        'data-on': enabled ? 'true' : undefined,
-        'aria-hidden': 'true',
-      }, h('span', { className: 'bwt-switch-thumb' }))),
-    h('label', { className: 'bwt-volume', title: t('notify.volume.title') },
-      h('input', {
-        ref: volumeInput,
-        type: 'range',
-        min: '0',
-        max: '100',
-        step: '1',
-        value: String(volume),
-        disabled: !enabled,
-        'aria-label': t('notify.volume.title'),
-        // The native `input` listener (above) is the real handler; this no-op
-        // keeps React from warning about a value without onChange.
-        onChange: function () {},
-      }),
-      h('span', { className: 'bwt-volume-value' }, String(volume))))
-}
-
 exports.inject = ['slots', 'locale']
 
 exports.apply = function apply(ctx) {
@@ -351,18 +223,6 @@ exports.apply = function apply(ctx) {
       order: 30,
       locale: NS,
     }, NotifyDock)
-  })
-
-  // Chime preferences in General settings: an on/off switch + volume slider.
-  // Persisted to localStorage (pure client — no host data, no restart).
-  ctx.slots.inject('settings.general.item', function () {
-    return ctx.slots.register({
-      name: 'settings.general.item',
-      id: 'better-webui-notify',
-      // After composer-enter (20) in the General section.
-      order: 30,
-      locale: NS,
-    }, NotifySettingsRow)
   })
 
   // Unlock the Web Audio context on the first user gesture so synthesized

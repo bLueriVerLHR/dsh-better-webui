@@ -1,10 +1,12 @@
 /**
  * jsdom integration test for the chime client package (lib/client.js) — a
  * real DOM, the app's exact React version, and dispatched events. The chime
- * package contributes EXACTLY TWO surfaces: a conversation.input.dock entry
- * (session activity chimes, sound only) and a settings.general.item row
- * (on/off switch + volume slider). jsdom has no AudioContext, so a recording
- * fake stands in: each oscillator created counts as one chime note
+ * package contributes EXACTLY ONE surface: a conversation.input.dock entry
+ * (session activity chimes, sound only). Its on/off switch and volume slider
+ * moved to the dedicated "better-webui" settings page (the
+ * better-webui-settings package) in v0.19, so this package no longer
+ * registers a settings.general.item row. jsdom has no AudioContext, so a
+ * recording fake stands in: each oscillator created counts as one chime note
  * (waiting = 2, done = 3). No popup is ever rendered.
  *
  * Run: node packages/chime/tests/smoke.mjs   (after `npm run build`)
@@ -39,14 +41,12 @@ plugin.apply(mockCtx)
 
 const notifyReg = registrations.find((r) => r.spec.name === 'conversation.input.dock')
 const notifySettingsReg = registrations.find((r) => r.spec.name === 'settings.general.item')
-check(notifyReg !== undefined && notifySettingsReg !== undefined,
-  'apply() 注册两个贡献（会话提醒 + 通用设置行）')
-check(registrations.length === 2, '贡献数量精确为两个（chime 包不再注册归档设置页）')
+check(notifyReg !== undefined && notifySettingsReg === undefined,
+  'apply() 只注册会话提醒（音量/开关已移到 better-webui 设置页）')
+check(registrations.length === 1, '贡献数量精确为一个（chime 包只注册 conversation.input.dock）')
 check(dom.window.document.getElementById('better-webui-notify-style') !== null, '样式表已注入 <head>')
 check(notifyReg.spec.id === 'better-webui-notify' && typeof notifyReg.component === 'function',
   '会话活动提醒注册到 conversation.input.dock（id better-webui-notify）')
-check(notifySettingsReg.spec.id === 'better-webui-notify' && typeof notifySettingsReg.component === 'function',
-  '提示音设置注册到 settings.general.item（id better-webui-notify）')
 
 /* 3. NotifyDock transitions (sound only). */
 let oscCalls = 0
@@ -132,48 +132,9 @@ check(oscCalls === 0, '提醒：开关关闭时不发提示音')
 notifyRoot.unmount()
 notifyHost.remove()
 
-/* 4. General-settings row: on/off switch + volume slider, persisted to
-      localStorage (pure client — no host data). */
-dom.window.localStorage.clear()
-const settingsHost = dom.window.document.createElement('div')
-dom.window.document.body.appendChild(settingsHost)
-const settingsRoot = ReactDOMClient.createRoot(settingsHost)
-await new Promise((resolve) => {
-  settingsRoot.render(h(notifySettingsReg.component, { t }))
-  setTimeout(resolve, 20)
-})
-
-const switchEl = settingsHost.querySelector('.bwt-switch')
-const sliderEl = settingsHost.querySelector('.bwt-volume input[type=range]')
-const click = (el) => el.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }))
-
-check(switchEl !== null && switchEl.getAttribute('role') === 'switch'
-  && switchEl.getAttribute('aria-checked') === 'true', '通用设置：默认开关开启')
-check(sliderEl !== null && sliderEl.value === '80' && sliderEl.disabled === false,
-  '通用设置：默认音量 80 且滑块可用')
-
-await new Promise((r) => { click(switchEl); setTimeout(r, 20) })
-check(dom.window.localStorage.getItem('better-webui:notify:enabled') === '0'
-  && switchEl.getAttribute('aria-checked') === 'false', '通用设置：关闭开关写入 localStorage')
-check(sliderEl.disabled === true, '通用设置：关闭后滑块禁用')
-
-await new Promise((r) => { click(switchEl); setTimeout(r, 20) })
-check(dom.window.localStorage.getItem('better-webui:notify:enabled') === '1', '通用设置：重新开启')
-
-// The slider listens to native events: `input` (dragging) only persists the
-// value; `change` (release) previews the chime once.
-oscCalls = 0
-sliderEl.value = '35'
-sliderEl.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
-await new Promise((r) => setTimeout(r, 20))
-check(dom.window.localStorage.getItem('better-webui:notify:volume') === '35', '通用设置：音量滑块拖动写入 localStorage')
-check(oscCalls === 0, '通用设置：拖动中不试听')
-sliderEl.dispatchEvent(new dom.window.Event('change', { bubbles: true }))
-await new Promise((r) => setTimeout(r, 20))
-check(oscCalls === 3, '通用设置：松手时试听一次（完成三音）')
-
-settingsRoot.unmount()
-settingsHost.remove()
+/* 4. The on/off switch + volume slider moved to the better-webui settings
+      page (better-webui-settings package) in v0.19 — it is covered by that
+      package's own smoke test. The chime package only plays audio. */
 
 console.log(failures.length === 0 ? '\n全部通过 ✓' : `\n${failures.length} 项失败`)
 process.exit(failures.length === 0 ? 0 : 1)

@@ -21,3 +21,6 @@
 - insert:
     - id: better-webui-bashguard
       name: "@blueriverlhr/dsh-better-webui-bashguard"
+- insert:
+    - id: better-webui-settings
+      name: "@blueriverlhr/dsh-better-webui-settings"

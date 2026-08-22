@@ -30,6 +30,7 @@ const FEATURES = [
   'chime',
   'search',
   'bashguard',
+  'settings',
 ]
 
 /** Import one feature's patch source (default export: the patch data array). */

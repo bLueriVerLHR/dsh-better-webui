@@ -1,0 +1,3 @@
+- insert:
+    - id: better-webui-settings
+      name: "@blueriverlhr/dsh-better-webui-settings"

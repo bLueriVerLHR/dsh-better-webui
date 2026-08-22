@@ -20,6 +20,8 @@ const tests = [
   'packages/chime/tests/smoke.mjs',
   'packages/search/tests/web-search-exa.mjs',
   'packages/bashguard/tests/stall-guard.mjs',
+  'packages/settings/tests/host.mjs',
+  'packages/settings/tests/smoke.mjs',
   'tests/composition.mjs',
   'tests/client-envelope.mjs',
 ]

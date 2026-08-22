@@ -1,7 +1,7 @@
 # @blueriverlhr/dsh-better-webui
 
-DeepSeek Harness Web GUI 增强插件 —— **monorepo 元包**：一个"大包"聚合五个解耦的功能小包。
-**安装这个包 = 五个功能全部挂上**；每个功能也都可以单独安装（见 [按需安装](#按需安装)）。
+DeepSeek Harness Web GUI 增强插件 —— **monorepo 元包**：一个"大包"聚合六个解耦的功能小包。
+**安装这个包 = 六个功能全部挂上**；每个功能也都可以单独安装（见 [按需安装](#按需安装)）。
 
 功能清单：
 
@@ -12,6 +12,7 @@ DeepSeek Harness Web GUI 增强插件 —— **monorepo 元包**：一个"大包
 | **会话活动提示音**（agent 等待输入 / 完成任务 / 回合失败时播放提示音） | `@blueriverlhr/dsh-better-webui-chime` | client |
 | **免密钥 Exa 网络搜索**（无 API key 也能用原生 `web_search`） | `@blueriverlhr/dsh-better-webui-search` | host |
 | **持久化 bash 卡顿卫士**（minimal 预设的持久终端退化为 ~3s 沉默档后自动重置 shell） | `@blueriverlhr/dsh-better-webui-bashguard` | host |
+| **可配置重试策略 + 专属设置页**（调大重试次数/退避；集中管理 better-webui 偏好，含提示音音量） | `@blueriverlhr/dsh-better-webui-settings` | host + client |
 
 > 拆分动机与架构（设计模式、风险隔离、维护性）见 [docs/monorepo.md](docs/monorepo.md)。
 
@@ -51,10 +52,11 @@ DeepSeek Harness Web GUI 增强插件 —— **monorepo 元包**：一个"大包
   （与完成音区分，绝不把失败报成完成）
 - 用户手动**停止**的回合不提醒
 
-**设置**（「通用」设置分区）：一个开关（启用/停用提示音）+ 一个音量滑块
-（0-100，0 为静音）。音量滑块**拖动中不响、松手时才试听一次**。开关和音量存
-**localStorage**（纯客户端，不改宿主、不写 `settings.yaml`），所以**无需重启**，
-刷新页面即可生效。
+**设置**（v0.19 起在「设置 → better-webui」页，已从通用设置移入）：一个开关
+（启用/停用提示音）+ 一个音量滑块（0-100，0 为静音）。音量滑块**拖动中不响、
+松手时才试听一次**。开关和音量存 **localStorage**（纯客户端，不改宿主、不写
+`settings.yaml`），所以**无需重启**，刷新页面即可生效。老用户的设置（键
+`better-webui:notify:enabled` / `:volume`）迁移后不丢。
 
 实现要点：
 
@@ -144,13 +146,42 @@ dsh 的**持久化** `bash` 工具（minimal 预设及任何挂载它的 preset 
 
 生效方式：改动在 host half，需**重启 `dsh web`**。
 
+### 可配置重试策略 + 专属设置页（settings）
+
+设置面板左侧导航里的**better-webui**页（位于「Agent 预设」与「归档会话」之间），
+集中管理 better-webui 的功能偏好，不混入 dsh 自身设置分区。两卡：
+
+**重试策略**——DSH 原生模型请求重试默认 `maxRetries: 2` 且没有可调的入口
+（`dsh-llm-retry` 按 provider 读 `llm-pi-ai.providers.*.retryPolicy`）。本卡提供
+**全局默认策略**：重试次数 + 初始延迟 + 最大延迟 + 抖动比例，点「应用」后由宿主
+通过 `settings` 服务幂等地写入**每个未自行声明 `retryPolicy` 的 provider**：
+
+- **不覆盖手写**：某个 provider 若已声明自己的 `retryPolicy`（与插件上次写入的
+  `lastApplied` 标记不同），页面上标为「手写配置（不覆盖）」并跳过；想单独设的
+  provider 手写 `settings.yaml` 即可
+- **DSH 原生执行**：写入的是 DSH 自己的 `retryPolicy` 形状（`mode: normal` +
+  `backoff`），由 `dsh-llm-retry` 原样执行；改 `settings.yaml` 即**热加载**
+  （pi-ai 适配器实时读 `retryPolicy`），**无需重启**
+- **持久化**：策略与 `lastApplied` 标记存在 `better-webui.retry` 设置命名空间
+  （settings.yaml 里 `better-webui:` 一节），重启后依然生效；「恢复默认」一键回到
+  DSH 原生默认（2 次 / 500ms / 10s / 0.1）
+- **Provider 状态**：页面列出每个 provider 当前是「未配置（将应用全局默认）」「已应用
+  全局策略」「沿用上次应用的策略」还是「手写配置（不覆盖）」
+
+**会话提示音**——开关 + 音量滑块（0-100，0 静音），v0.19 起**从 dsh 通用设置移入**
+本页。纯客户端 localStorage（键 `better-webui:notify:enabled` / `:volume` 不变，
+老用户设置不丢），chime 包的播放逻辑继续读这两个键，无需重启。
+
+生效方式：宿主改动（RPC 通道 + 设置命名空间）→ **重启 `dsh web`**；客户端页面
+改动刷新浏览器即可。
+
 ---
 
 ## 安装
 
 本仓库是 monorepo：根目录是**元包** `@blueriverlhr/dsh-better-webui`（无自身代码，
-只聚合），`packages/<feature>/` 是五个功能小包。元包的 `dependencies` 指向小包，
-patch 挂载全部五行。
+只聚合），`packages/<feature>/` 是六个功能小包。元包的 `dependencies` 指向小包，
+patch 挂载全部六行。
 
 ### 整包安装（推荐）
 
@@ -197,7 +228,7 @@ profile）。以默认 `web` profile 为例，编辑 `~/.dsh/profiles/web/packag
 ## 开发
 
 ```sh
-npm run build   # 构建全部 5 个小包的 lib/ + 重新生成全部 cordis.patch.yml
+npm run build   # 构建全部 6 个小包的 lib/ + 重新生成全部 cordis.patch.yml
 npm test        # 构建 + 运行全部测试（见下）
 ```
 
@@ -208,9 +239,11 @@ npm test        # 构建 + 运行全部测试（见下）
 | `packages/archive/tests/host.mjs` | 归档宿主：真实临时目录 + 模拟注册表，验证彻底删除无残留 |
 | `packages/archive/tests/smoke.mjs` | 归档客户端：jsdom 集成测试（真实 React 18.3.1 + 真实点击） |
 | `packages/reasoning/tests/reasoning.mjs` | 推理等级补齐（模拟 settings 服务，验证幂等补齐/不覆盖/监听） |
-| `packages/chime/tests/smoke.mjs` | 提示音客户端：dock 跳变触发 + 通用设置行 + localStorage |
+| `packages/chime/tests/smoke.mjs` | 提示音客户端：dock 跳变触发 + localStorage 读取 |
 | `packages/search/tests/web-search-exa.mjs` | 免密钥 Exa 搜索 provider（匿名 MCP/REST/429/abort） |
 | `packages/bashguard/tests/stall-guard.mjs` | 卡顿卫士（纯决策逻辑 + tools/execute 接线） |
+| `packages/settings/tests/host.mjs` | 重试策略宿主：规划/应用/幂等/不覆盖手写 |
+| `packages/settings/tests/smoke.mjs` | better-webui 设置页：重试卡 + 提示音卡 + RPC/localStorage |
 | `tests/composition.mjs` | patch 组合守卫：提交的 cordis.patch.yml 与各包源一致 |
 | `tests/client-envelope.mjs` | 每个 client 包的加载信封 + 插槽注册（参数化） |
 

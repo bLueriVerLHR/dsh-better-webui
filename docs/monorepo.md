@@ -27,7 +27,7 @@
 
 ```
 dsh-better-webui/                        # 元包 @blueriverlhr/dsh-better-webui（Facade，无自身代码）
-  package.json                           # dependencies → 5 个小包（file:）
+  package.json                           # dependencies → 6 个小包（file:）
   cordis.patch.yml                       # 聚合 patch（GENERATED，勿手改）
   build.mjs                              # 组合构建：逐包 build + 重生成全部 patch
   scripts/
@@ -37,9 +37,10 @@ dsh-better-webui/                        # 元包 @blueriverlhr/dsh-better-webui
   packages/
     archive/       host + client         归档会话管理（RPC 通道 /better-webui + 设置页）
     reasoning/     host                  推理等级补齐（settings 服务）
-    chime/         client                会话活动提示音（dock + 通用设置行）
+    chime/         client                会话活动提示音（dock；音量/开关在 better-webui 设置页）
     search/        host                  Exa 搜索 provider（含 web 行覆盖）
     bashguard/     host                  持久化 bash 卡顿卫士（tools/execute 守卫）
+    settings/      host + client         可配置重试策略 + better-webui 专属设置页（RPC /better-webui-settings）
   tests/
     support/                             共享 jsdom 测试骨架（client-harness / primitives-stub）
     composition.mjs                      patch 组合守卫
@@ -70,23 +71,30 @@ dsh-better-webui/                        # 元包 @blueriverlhr/dsh-better-webui
 |---|---|---|---|---|---|
 | archive | `lib/index.js`（RPC 通道） | ✓ 设置页 | platform web | inject: connection/sessionPersistence/workspaceRegistry；可选 sessions/agents | 1 行 |
 | reasoning | `lib/index.js`（provision 任务） | — | — | 可选 settings + ctx.root 事件 | 1 行 |
-| chime | `lib/index.js`（空 apply） | ✓ dock+设置行 | platform web | inject: slots/locale | 1 行 |
+| chime | `lib/index.js`（空 apply） | ✓ dock | platform web | inject: slots/locale | 1 行 |
 | search | `lib/index.js`（provider 注册） | — | — | 可选 web | 1 行 + **web 行 searchProvider 覆盖** |
 | bashguard | `lib/index.js`（waterfall 守卫） | — | — | 可选 agentPresets/terminals | 1 行 |
+| settings | `lib/index.js`（RPC 通道 + 设置命名空间） | ✓ 设置页 | platform web | inject: connection/settings | 1 行 |
 
 **跨包约束（不能破坏，否则 HMR/挂载异常）：**
 
 - **行 id 全局唯一**：`better-webui-archive` / `-reasoning` / `-chime` / `-search` /
-  `-bashguard`。不要重复使用。
+  `-bashguard` / `-settings`。不要重复使用。
 - **插槽 id 全局唯一**：archive 用 `better-webui-archive`（settings.section），
-  chime 用 `better-webui-notify`（conversation.input.dock + settings.general.item）。
-- **locale NS 独立**：archive 用 `better-webui-archive`，chime 用 `better-webui-notify`。
+  chime 用 `better-webui-notify`（conversation.input.dock），settings 用
+  `better-webui-settings`（settings.section）。
+- **locale NS 独立**：archive 用 `better-webui-archive`，chime 用 `better-webui-notify`，
+  settings 用 `better-webui-settings`。
 - **style 标签 id 独立**：archive 用 `better-webui-style`，chime 用
-  `better-webui-notify-style`（HMR 按标签认领）。
-- **RPC 通道唯一**：只有 archive 用 `/better-webui`，带自身 `WIRE_VERSION` 握手。
+  `better-webui-notify-style`，settings 用 `better-webui-settings-style`
+  （HMR 按标签认领）。
+- **RPC 通道唯一**：archive 用 `/better-webui`，settings 用 `/better-webui-settings`，
+  各自带 `WIRE_VERSION` 握手。
 - **localStorage 键保持稳定**：`better-webui:notify:enabled` / `:volume` 拆分后
-  不变，老用户的设置不丢。
+  不变，老用户的设置不丢（chime 读、settings 页写，同一份键契约）。
 - **client 跨包值导入被禁**：client half 只能 require 平台静态表；不引用兄弟包。
+  settings 页的提示音卡与 chime 通过**同键字符串**（非导入）共享，属稳定的跨包
+  值契约。
 
 ---
 
@@ -107,8 +115,8 @@ dsh-better-webui/                        # 元包 @blueriverlhr/dsh-better-webui
 ## 6. 安装语义（装大包 = 装小包）
 
 1. profile `dependencies` 只声明**元包**，bundles 只列**元包**。
-2. 元包 `dependencies` 指向 5 个小包；pnpm 把它们平铺进 `profiles/<name>/node_modules`。
-3. 元包聚合 patch 插入 5 行，每个 `name` 是小包 → Loader 与 client-modules registry
+2. 元包 `dependencies` 指向 6 个小包；pnpm 把它们平铺进 `profiles/<name>/node_modules`。
+3. 元包聚合 patch 插入 6 行，每个 `name` 是小包 → Loader 与 client-modules registry
    从 profile baseUrl 解析到小包，host half 与 browser half 各自挂载。
 
 **关键坑**：pnpm 对 `link:` 依赖只软链、不装其传递依赖；必须用 `file:`（本地）或
@@ -132,13 +140,13 @@ dsh-better-webui/                        # 元包 @blueriverlhr/dsh-better-webui
 - 改功能：只改对应包；测试只跑该包或 `npm test`。
 - 提交前 `npm test`；`cordis.patch.yml` 与 `lib/` 是构建产物但**提交进 git**
   （消费者不做构建，靠提交的产物安装）。
-- 版本：各包与元包同版本（当前 0.14.0）保持锁步，简化发布。
+- 版本：各包与元包同版本（当前 0.19.0）保持锁步，简化发布。
 
 ---
 
 ## 8. 验证
 
-- `npm run build`：5 包 lib/ + 全部 cordis.patch.yml 重新生成。
-- `npm test`：8 个测试脚本（host/smoke/reasoning/chime/search/bashguard/
-  composition/client-envelope）全绿。
-- `dsh --profile web --dump-config`：确认 composed 树含 5 行 + `searchProvider: exa`。
+- `npm run build`：6 包 lib/ + 全部 cordis.patch.yml 重新生成。
+- `npm test`：10 个测试脚本（archive host/smoke、reasoning、chime、search、
+  bashguard、settings host/smoke、composition、client-envelope）全绿。
+- `dsh --profile web --dump-config`：确认 composed 树含 6 行 + `searchProvider: exa`。

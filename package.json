@@ -1,36 +1,30 @@
 {
   "name": "@blueriverlhr/dsh-better-webui",
-  "description": "Web GUI enhancement plugin: archive-session management (view / restore / two-step permanent delete) + custom-model reasoning-level provisioning + session activity chimes (sound only, with on/off and volume in General settings; release-preview slider, error chime on failed turns) + keyless Exa web search (anonymous Exa hosted MCP by default, REST upgrade via EXA_API_KEY) + persistent-bash stall guard (auto-reset the minimal preset's persistent shell when PTY readiness degrades to the ~3s silence tier)",
-  "version": "0.13.0",
+  "description": "Web GUI enhancement plugin, monorepo meta bundle: aggregating five decoupled feature packages (archive-session management / custom-model reasoning provisioning / session activity chimes / keyless Exa web search / persistent-bash stall guard). Installing this bundle mounts every feature; each feature is also installable on its own.",
+  "version": "0.14.0",
   "private": true,
   "type": "module",
-  "main": "lib/index.js",
-  "exports": {
-    ".": "./lib/index.js",
-    "./client": "./lib/client.js",
-    "./cordis.patch.yml": "./cordis.patch.yml",
-    "./src/*": "./src/*",
-    "./package.json": "./package.json"
+  "dependencies": {
+    "@blueriverlhr/dsh-better-webui-archive": "file:./packages/archive",
+    "@blueriverlhr/dsh-better-webui-bashguard": "file:./packages/bashguard",
+    "@blueriverlhr/dsh-better-webui-chime": "file:./packages/chime",
+    "@blueriverlhr/dsh-better-webui-reasoning": "file:./packages/reasoning",
+    "@blueriverlhr/dsh-better-webui-search": "file:./packages/search"
   },
   "files": [
-    "lib/",
-    "cordis.patch.yml"
+    "cordis.patch.yml",
+    "packages/",
+    "README.md"
   ],
-  "scripts": {
-    "build": "node build.mjs"
-  },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
-    },
-    "client": {
-      "inject": [
-        "@deepseek-ai/dsh-client-runtime",
-        "@deepseek-ai/dsh-client-locale",
-        "@deepseek-ai/dsh-client-ui-slots"
-      ],
-      "platform": "web"
     }
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node build.mjs && node tests/run-all.mjs",
+    "test:composition": "node tests/composition.mjs"
   },
   "license": "GPL-3.0",
   "devDependencies": {

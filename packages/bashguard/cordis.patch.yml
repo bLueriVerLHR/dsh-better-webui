@@ -1,0 +1,3 @@
+- insert:
+    - id: better-webui-bashguard
+      name: "@blueriverlhr/dsh-better-webui-bashguard"

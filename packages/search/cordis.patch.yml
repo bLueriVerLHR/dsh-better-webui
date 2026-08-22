@@ -1,0 +1,7 @@
+- insert:
+    - id: better-webui-search
+      name: "@blueriverlhr/dsh-better-webui-search"
+- id: web
+  name: "@deepseek-ai/dsh-web"
+  config:
+    searchProvider: exa

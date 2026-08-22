@@ -510,3 +510,128 @@ dsh 无公开 API 丢弃活会话（`AgentHandle.dispose()` 是一次性 capabil
 - wire 版本维持 3（无宿主改动）。
 - **测试**：smoke.mjs 改为断言设置页（单注册 `settings.section`、页面直列 3 行、
   无计数、清除按钮在 `.bwt-footer`、简介非「入口」式），29 项全绿。
+
+---
+
+## 12. v0.15→v0.18 reasoning 排查记录（两代修复 + 事件驱动重构）
+
+> 功能：`packages/reasoning` 给 `llm-pi-ai` 下未声明推理能力的自定义模型自动补
+> `reasoningEfforts` 全档位（off/minimal/low/medium/high/xhigh/max），写回
+> `settings.yaml` 持久化，让原生 composer「推理等级」菜单对 scnet 等自定义服务商
+> 生效。本文记录「功能写了两次都没生效 → 最终定位并事件驱动化」的完整经验。
+
+### 12.1 症状与初步结论（都指向"补齐没跑"）
+
+- v0.15（`feat: full reasoning levels`）与 v0.16（`fix: wait on settings via inject`）
+  都已合入，`npm test` 全绿，但**实机重启后 `settings.yaml` 里的模型仍是旧四档**
+  （`off/low/medium/high`），composer 里看不到 xhigh/max/minimal。
+- 用动态插件读 live `settings`（`describe()` + `get('llm-pi-ai')`）确认：`llm-pi-ai`
+  命名空间**已注册**（在 `describe()` 的 namespace 列表里），但 **revision = 0**——
+  证明从启动到现在**从未发生过任何一次写**，补齐 pass 从没跑过它的 `mutate`。
+- 代码逻辑（`provisionCustomModelReasoning` + 幂等 + 测试）本身是对的；问题在
+  **触发时机**，即 `apply()` 到底有没有、能不能在 `llm-pi-ai` 存在后执行补齐。
+
+### 12.2 根因 1：`ctx.effect` 的语义被误用（v0.17 修复）
+
+启动时序是这样的：
+
+1. reasoning 插件 `inject: ['settings']` —— Cordis 在 `settings` 服务一注册就激活它。
+2. 但 `llm-pi-ai` 命名空间是 **`dsh-llm-pi-ai` 在它自己的 `apply()` 里**
+   `installSettingsSection(...)` 注册的，比 reasoning 插件激活**晚**。
+3. 所以 apply 时第一次 `provision()`：`settings.describe()` 里还没有 `llm-pi-ai` →
+   `descriptor` 为 undefined → 直接 return，什么都没写。
+4. 原设计留了一个兜底：2 秒后重跑。**但兜底永远没触发**：
+
+```js
+// v0.16（错）：ctx.effect 的 callback 在 apply 时【立即同步执行】，
+// clearTimeout(lateTimer) 当场把 2 秒定时器杀掉，晚补全永不发生。
+const lateTimer = setTimeout(() => provision(), 2000)
+ctx.effect(() => { clearTimeout(lateTimer) }, '...')
+```
+
+Cordis 的 `ctx.effect(callback)` **不是"挂一个回调等卸载时执行"**，而是：
+- **立即**调用 callback（`fiber._execute` 同步执行）；
+- callback 的**返回值**才是 disposer，存起来等 fiber 卸载时调用。
+
+所以正确的写法是让 callback **返回**清理函数：
+
+```js
+// v0.17（对）：callback 返回 () => clearTimeout(...)，清理只在卸载时跑。
+ctx.effect(() => () => clearTimeout(lateTimer), '...')
+```
+
+（对比：`ctx.effect(() => disposeSettingsWatcher, '...')` 是对的——它返回的是
+`disposeSettingsWatcher` 这个函数引用，没有立即调用。）
+
+**教训**：在 Cordis 里 `ctx.effect` = 「立即执行 + 返回值作 disposer」，不是
+`useEffect` 式的声明。凡是想"注册一个清理动作"，callback 必须 `() => () => cleanup`，
+绝不能 `() => { cleanup() }`。同理 `ctx.on()`、`slots.inject()` 等返回 disposer 的
+API，都要通过 `ctx.effect(() => disposer)` 交给 fiber 管理。
+
+### 12.3 根因 2（用户裁决）：硬编码时间本身就是错的（v0.18 重构）
+
+v0.17 修好后功能能用了，但用户指出：**固定 2 秒 `setTimeout` 完全不符合工程逻辑、
+不直觉**——它是个竞态（boot 慢不够、boot 快浪费），也解释不了"为什么要等 2 秒"。
+用户也明确提出期望：**补齐一次后持久化固定，下次开机保留，不要每次手动调整**。
+
+重新读 dsh 源码找"llm-pi-ai 生效的精确信号"，发现：
+
+- `dsh-llm-pi-ai` 在 apply 里调 `ctx.llm.registerAdapter(routes, adapter)` 和
+  `ctx.llm.registerConfigurableProviders(entries)`；
+- `registerAdapter` → `commitRoutes()` 与 `registerConfigurableProviders` → `commit()`
+  都会**同步** `emitAdaptersUpdated()` → 广播 **`llm/adapters-updated`** 事件；
+- 该事件是全局 emit（`ctx.events.dispatch("emit", ...)`），`ctx.root.on(...)` 在
+  `llm` 服务注册前监听也能收到之后的事件。
+
+**结论：`llm/adapters-updated` 就是"llm-pi-ai 配置生效"的精确事件**。用它替代定时器：
+
+```js
+export function apply(ctx) {
+  const provision = () => { void provisionCustomModelReasoning(ctx, 'provision').catch(() => {}) }
+  provision() // 覆盖持久化场景（上次开机已补好 → 幂等不写）
+  if (typeof ctx.root?.on === 'function') {
+    // llm-pi-ai 适配器注册/更新的瞬间 → 补齐。事件驱动，零定时器、零轮询。
+    ctx.effect(() => ctx.root.on('llm/adapters-updated', () => provision()),
+      'better-webui-reasoning: adapter watcher')
+    // settings.yaml 热重载 → 补齐（用户手改/插件写回都会触发）。
+    ctx.effect(() => ctx.root.on('settings/document-updated', (ns) => {
+      if (ns !== LLM_PI_AI_NS) return
+      provision()
+    }), 'better-webui-reasoning: provisioning watcher')
+  }
+}
+```
+
+**经验**：
+- **不要用定时器去"等一个还没注册的东西"**。找那个东西注册/生效时的**事件或回调**
+  信号，事件驱动才正确、可解释、无竞态。dsh 的 `llm/adapters-updated`、
+  `settings/document-updated`、`settings/updated`、`tools/change`、`skills/change` 等
+  都是这种"配置/能力生效"的精确信号。
+- 一个信号的可用性要从 dsh 源码确认（`grep registerAdapter / emitAdaptersUpdated`），
+  不能只靠名字猜。
+- **幂等 + 持久化是"开机保留"的关键**：补齐写回 `settings.yaml`，下次开机读出来
+  已全档 → `needsGrant` 全 false → 不写不干扰。用户不用每次手动调。
+
+### 12.4 排查手法（可复用）
+
+- **动态插件读 live 状态**：用临时 dynamic plugin 调 `settings.describe()` /
+  `settings.get('llm-pi-ai')` 读当前进程内的真实状态（比看文件准），确认命名空间
+  是否注册、revision 是否为 0、user 层档位；把结果写到工作区文件再读回。
+- **从源码确认契约**：`ctx.effect`/`ctx.on`/事件 emit 的语义、`registerAdapter` 是否
+  emit 事件，都要从 `node_modules/@deepseek-ai/*/lib/index.js` 读出，不能靠印象。
+- **回归测试要能复现真 bug**：新增的 boot-race 测试先临时还原 bug 验证「测试会失败」，
+  再恢复修复验证「测试通过」——确认测试真的守得住这条线。事件驱动后，测试也变成
+  **触发 `llm/adapters-updated` 事件立即断言**，不再等待定时器，又快又准。
+- 注意：动态 plugin（sandbox）里 `settings.update/mutate` 会因 **cross-realm 的
+  plain-object 检查**失败（沙箱 VM 里的对象 prototype 不是 host realm 的
+  `Object.prototype`）——这是沙箱限制，不是 reasoning 插件的问题；静态 bundle 插件
+  （host-realm，ESM import 加载）不受影响。
+
+### 12.5 当前行为（v0.18，文档化）
+
+- 启动：apply 立即 `provision()`（幂等）→ `llm/adapters-updated` 事件在
+  `llm-pi-ai` 适配器注册时同步触发 → 补齐写 `settings.yaml`。无定时器、无等待。
+- settings.yaml 热重载：`settings/document-updated` → 补齐。
+- 持久化：下次开机已全档 → 不写不干扰，composer 直接有七档，无需手动调整。
+- 生效路径：host 改动 → 重启 `dsh web`。
+

@@ -1,10 +1,11 @@
 /**
  * Host-half test for the custom-model reasoning provisioning: the boot pass
- * and the `settings/document-updated` watcher must grant the standard
- * `off/low/medium/high` reasoning metadata to every custom model that
- * declares none (in `models[]` and `modelOverrides`), never touch a model
- * that already declares `reasoningEfforts`, and stay quiet when nothing is
- * missing or when the settings service is absent.
+ * and the `settings/document-updated` watcher must grant the full
+ * `off/minimal/low/medium/high/xhigh/max` reasoning metadata to every custom
+ * model that declares none, upgrade a model that still carries the legacy
+ * four-level default, never touch a model that already declares its own
+ * `reasoningEfforts` (a custom dict, or false), and stay quiet when nothing
+ * is missing or when the settings service is absent.
  *
  * Run: node tests/reasoning.mjs
  */
@@ -16,6 +17,18 @@ import * as host from '../src/host.js'
 
 const results = []
 const check = (ok, label) => { results.push([ok, label]); console.log(`  ${ok ? '✓' : '✗'} ${label}`) }
+
+/* 0. pure decision helpers: the legacy-default upgrade predicate. */
+{
+  const LEGACY = { off: null, low: 'low', medium: 'medium', high: 'high' }
+  const FULL = { off: null, minimal: 'minimal', low: 'low', medium: 'medium', high: 'high', xhigh: 'xhigh', max: 'max' }
+  check(host.isLegacyDefaultEfforts(LEGACY) === true, 'isLegacyDefaultEfforts：恰好等于旧默认四档 → true')
+  check(host.isLegacyDefaultEfforts(FULL) === false, 'isLegacyDefaultEfforts：全档位 → false')
+  check(host.isLegacyDefaultEfforts({ low: 'low', high: 'high' }) === false, 'isLegacyDefaultEfforts：自定义 dict → false')
+  check(host.isLegacyDefaultEfforts(false) === false, 'isLegacyDefaultEfforts：false（退出）→ false')
+  check(host.isLegacyDefaultEfforts(undefined) === false, 'isLegacyDefaultEfforts：undefined → false')
+  check(host.isLegacyDefaultEfforts({ ...LEGACY, max: 'max' }) === false, 'isLegacyDefaultEfforts：旧默认+新档 → false（已含 max）')
+}
 
 /* --- a settings-capable mock over a fresh DSH_HOME --- */
 const home = mkdtempSync(join(tmpdir(), 'bwt-reason-'))
@@ -63,10 +76,13 @@ const userSection = () => ({
         { id: 'declared-model', reasoningEfforts: { medium: 'medium', high: 'high' } },
         { id: 'opted-out', reasoningEfforts: false },
         { id: 'with-capacity', name: 'Cap', contextWindow: 1000, maxTokens: 100 },
+        // A machine-granted legacy four-level default must be upgraded.
+        { id: 'legacy-default', reasoningEfforts: { off: null, low: 'low', medium: 'medium', high: 'high' } },
       ],
       modelOverrides: {
         'override-model': { name: 'Override' },
         'override-declared': { reasoningEfforts: { low: 'low' } },
+        'override-legacy': { reasoningEfforts: { off: null, low: 'low', medium: 'medium', high: 'high' } },
       },
     },
     'catalog-route': { models: [] },
@@ -109,20 +125,24 @@ check(writes.length === 1, '启动补齐只写一次 settings.mutate')
 const boot = writes[0]
 check(boot.ns === 'llm-pi-ai', '写入的是 llm-pi-ai 命名空间')
 const opsByPath = new Map(boot.ops.map((op) => [op.path.join('.'), op]))
-const expected = { off: null, low: 'low', medium: 'medium', high: 'high' }
+const expected = { off: null, minimal: 'minimal', low: 'low', medium: 'medium', high: 'high', xhigh: 'xhigh', max: 'max' }
 const granted = opsByPath.get('providers.custom-gateway.models')
-check(granted !== undefined && granted.value.length === 4, 'models 整数组一次写出（保留 4 条）')
+check(granted !== undefined && granted.value.length === 5, 'models 整数组一次写出（保留 5 条）')
 check(JSON.stringify(granted.value[0].reasoningEfforts) === JSON.stringify(expected),
-  '默认档位为 off/low/medium/high')
+  '默认档位为 off/minimal/low/medium/high/xhigh/max')
 check(JSON.stringify(granted.value[1].reasoningEfforts) === JSON.stringify({ medium: 'medium', high: 'high' }),
   '已声明 dict 的模型原样保留')
 check(granted.value[2].reasoningEfforts === false, 'reasoningEfforts:false 的模型原样保留')
 check(JSON.stringify(granted.value[3].reasoningEfforts) === JSON.stringify(expected), '带容量的模型同样补上')
+check(JSON.stringify(granted.value[4].reasoningEfforts) === JSON.stringify(expected),
+  '旧默认四档的模型被升级到全档位')
 check(granted.value[0].id === 'plain-model' && granted.value[3].name === 'Cap', '数组条目其余字段保留')
 check(JSON.stringify(opsByPath.get('providers.custom-gateway.modelOverrides.override-model.reasoningEfforts').value)
   === JSON.stringify(expected), 'modelOverrides 未声明的补上')
 check(!opsByPath.has('providers.custom-gateway.modelOverrides.override-declared.reasoningEfforts'),
   'modelOverrides 已声明的不动')
+check(JSON.stringify(opsByPath.get('providers.custom-gateway.modelOverrides.override-legacy.reasoningEfforts').value)
+  === JSON.stringify(expected), 'modelOverrides 旧默认四档的升级到全档位')
 check(boot.revision === 7, '写入携带读取时的 revision')
 check(!opsByPath.has('providers.catalog-route.models'), '无 models 列表的目录路由不动')
 

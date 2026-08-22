@@ -1,7 +1,7 @@
 {
   "name": "@blueriverlhr/dsh-better-webui-chime",
   "description": "Web GUI session activity chimes (sound only): plays a synthesized chime when the agent starts waiting for input or finishes (or fails) a turn, with an on/off switch and volume slider in General settings. Pure client — localStorage, no host data, no restart.",
-  "version": "0.14.0",
+  "version": "0.15.0",
   "private": true,
   "type": "module",
   "main": "lib/index.js",

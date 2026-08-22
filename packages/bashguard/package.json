@@ -1,7 +1,7 @@
 {
   "name": "@blueriverlhr/dsh-better-webui-bashguard",
   "description": "Web GUI persistent-bash stall guard: detects the ~3s silence-tier PTY degradation of dsh's persistent bash tool (a PROMPT_COMMAND overwrite) by wall-clock duration and auto-resets the owner's shell after consecutive slow calls. Host only.",
-  "version": "0.14.0",
+  "version": "0.15.0",
   "private": true,
   "type": "module",
   "main": "lib/index.js",

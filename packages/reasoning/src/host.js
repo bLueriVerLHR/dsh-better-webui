@@ -6,15 +6,17 @@
  * metadata, and a hand-declared custom model (id/name/capacities in
  * `llm-pi-ai.providers.*.models`) has none — the pi-ai adapter reports
  * `reasoning: false`, so the menu is absent even though the config schema
- * supports `reasoningEfforts`. This half grants the standard
- * `off/low/medium/high` levels to every custom model that declares none,
+ * supports `reasoningEfforts`. This half grants the full pi-ai level set
+ * `off/minimal/low/medium/high/xhigh/max` to every custom model that declares
+ * none, and upgrades a model whose declaration is exactly the old four-level
+ * default (so existing models pick up the new levels on the next boot),
  * writing through the public `settings` service into the same `llm-pi-ai`
  * namespace the user edits by hand (persisted to `settings.yaml`,
  * hot-reloaded by the adapter, so the next menu open offers the levels
  * exactly like a catalog model). The pass is idempotent, runs at boot and
  * again whenever the namespace changes, and never touches a model that
- * already declares `reasoningEfforts` (set `reasoningEfforts: false` in
- * `settings.yaml` to opt a model out).
+ * declares its own deliberate `reasoningEfforts` (a custom dict, or `false`
+ * to opt a model out).
  *
  * The settings service is optional: a deployment without a usable settings
  * service skips with a warning instead of failing the plugin, so this package
@@ -25,13 +27,31 @@
 const LLM_PI_AI_NS = 'llm-pi-ai'
 
 /**
- * Default reasoning-effort metadata granted to a custom model with none.
- * The level keys are pi-ai thinking levels; `off: null` means "supported,
- * send nothing", and the string values are the `reasoning_effort` spellings
- * the standard openai-completions dispatch sends. A model declaring its own
- * `reasoningEfforts` (a dict or `false`) is never touched.
+ * The full reasoning-effort metadata granted to a custom model that declares
+ * none, or that still carries the legacy four-level default. The level keys
+ * are pi-ai thinking levels (`off → minimal → low → medium → high → xhigh →
+ * max`); `off: null` means "supported, send nothing", and the other string
+ * values are the wire `reasoning_effort` spellings the openai-completions
+ * dispatch sends. A model declaring its own deliberate `reasoningEfforts` (a
+ * custom dict, or `false`) is never touched.
  */
-const DEFAULT_REASONING_EFFORTS = Object.freeze({ off: null, low: 'low', medium: 'medium', high: 'high' })
+const DEFAULT_REASONING_EFFORTS = Object.freeze({
+  off: null,
+  minimal: 'minimal',
+  low: 'low',
+  medium: 'medium',
+  high: 'high',
+  xhigh: 'xhigh',
+  max: 'max',
+})
+
+/**
+ * The four-level default this package granted before v0.15. A model whose
+ * declaration is byte-equal to this (and was therefore machine-granted, not
+ * hand-tuned) is upgraded to {@link DEFAULT_REASONING_EFFORTS} so existing
+ * models pick up the new levels without a hand edit.
+ */
+const LEGACY_DEFAULT_REASONING_EFFORTS = Object.freeze({ off: null, low: 'low', medium: 'medium', high: 'high' })
 
 /** Log prefix. */
 function where(label) {
@@ -44,15 +64,37 @@ export function reasoningDeclared(model) {
 }
 
 /**
- * Idempotently grant default reasoning metadata to every custom model that
- * declares none, so the native composer's reasoning-effort menu offers levels
- * for it exactly like a catalog model. Reads the user layer of the
- * `llm-pi-ai` settings namespace and writes the missing `reasoningEfforts`
- * back through the same public service; the file provider persists the change
- * to `settings.yaml` and the pi-ai adapter reads profiles live, so the next
- * menu open shows the levels without a restart. Capability-checked: a
- * deployment without a usable settings service skips with a warning instead
- * of failing the plugin.
+ * Whether a declared `reasoningEfforts` dict is byte-equal to the legacy
+ * four-level default this package used to grant — i.e. machine-granted, not
+ * hand-tuned, so it is safe to upgrade to the full set.
+ * @param {unknown} efforts - the model's declared `reasoningEfforts` value.
+ */
+export function isLegacyDefaultEfforts(efforts) {
+  if (efforts === null || typeof efforts !== 'object') return false
+  const keys = Object.keys(efforts)
+  if (keys.length !== Object.keys(LEGACY_DEFAULT_REASONING_EFFORTS).length) return false
+  return Object.entries(LEGACY_DEFAULT_REASONING_EFFORTS).every(([level, wire]) => efforts[level] === wire)
+}
+
+/**
+ * Whether a model's declaration needs (re-)granting the full default set:
+ * it declares none, or it still carries the legacy four-level default.
+ * @param {unknown} efforts - the model's declared `reasoningEfforts` value.
+ */
+function needsGrantEfforts(efforts) {
+  return efforts === undefined || isLegacyDefaultEfforts(efforts)
+}
+
+/**
+ * Idempotently grant the full reasoning-level set to every custom model that
+ * declares none — or that still carries the legacy four-level default — so
+ * the native composer's reasoning-effort menu offers every level exactly like
+ * a catalog model. Reads the user layer of the `llm-pi-ai` settings namespace
+ * and writes the missing `reasoningEfforts` back through the same public
+ * service; the file provider persists the change to `settings.yaml` and the
+ * pi-ai adapter reads profiles live, so the next menu open shows the levels
+ * without a restart. Capability-checked: a deployment without a usable
+ * settings service skips with a warning instead of failing the plugin.
  * @param {import('@deepseek-ai/cordis').Context} ctx - host plugin context.
  * @param {string} label - log scope.
  */
@@ -76,17 +118,17 @@ export async function provisionCustomModelReasoning(ctx, label) {
     if (profile === null || typeof profile !== 'object') continue
     // `models` is an array, and settings path ops only traverse plain objects,
     // so one op replaces the whole array with every entry preserved and the
-    // missing `reasoningEfforts` granted in place.
+    // missing/legacy `reasoningEfforts` granted in place.
     if (Array.isArray(profile.models)) {
-      const needsGrant = profile.models.some((model) => !reasoningDeclared(model))
+      const needsGrant = profile.models.some((model) => needsGrantEfforts(model?.reasoningEfforts))
       if (needsGrant) {
         ops.push({
           op: 'set',
           path: ['providers', route, 'models'],
           value: profile.models.map((model) => (
-            reasoningDeclared(model)
-              ? model
-              : { ...model, reasoningEfforts: { ...DEFAULT_REASONING_EFFORTS } }
+            needsGrantEfforts(model?.reasoningEfforts)
+              ? { ...model, reasoningEfforts: { ...DEFAULT_REASONING_EFFORTS } }
+              : model
           )),
         })
       }
@@ -94,7 +136,7 @@ export async function provisionCustomModelReasoning(ctx, label) {
     // `modelOverrides` is a dict, so a per-entry op reaches each model directly.
     if (profile.modelOverrides !== null && typeof profile.modelOverrides === 'object') {
       for (const [modelId, model] of Object.entries(profile.modelOverrides)) {
-        if (reasoningDeclared(model)) continue
+        if (!needsGrantEfforts(model?.reasoningEfforts)) continue
         ops.push({
           op: 'set',
           path: ['providers', route, 'modelOverrides', modelId, 'reasoningEfforts'],
@@ -106,7 +148,7 @@ export async function provisionCustomModelReasoning(ctx, label) {
   if (ops.length === 0) return
   try {
     await settings.mutate(LLM_PI_AI_NS, ops, descriptor.revision)
-    console.warn(`${where(label)}: granted default reasoning levels to ${ops.length} custom model(s)`)
+    console.warn(`${where(label)}: granted/upgraded reasoning levels for ${ops.length} custom model(s)`)
   } catch (error) {
     console.warn(`${where(label)}: reasoning-level write failed: ${error instanceof Error ? error.message : String(error)}`)
   }

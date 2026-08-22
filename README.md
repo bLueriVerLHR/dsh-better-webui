@@ -94,13 +94,19 @@ DSH 的「推理等级」菜单只对带推理元数据的模型出现；手写�
 provider 的自定义模型（只有 id/name/容量）适配器判定为不推理，
 composer 菜单缺失，无法在会话里切换思考等级。本包宿主在启动时
 （以及 `settings.yaml` 每次变更后）**幂等**地为所有未声明推理能力的自定义
-模型补上标准档位 `reasoningEfforts: { off: null, low: low, medium: medium,
-high: high }`，写回同一个 `llm-pi-ai` 命名空间（持久化到 `settings.yaml`，
-热加载），原生 composer 的「推理等级」菜单随即对自定义模型生效，
-行为与预制模型完全一致。
+模型补上**全档位** `reasoningEfforts: { off: null, minimal: minimal,
+low: low, medium: medium, high: high, xhigh: xhigh, max: max }`，
+写回同一个 `llm-pi-ai` 命名空间（持久化到 `settings.yaml`，热加载），
+原生 composer 的「推理等级」菜单随即对自定义模型生效，行为与预制模型一致。
 
+- **全档位**：off / minimal / low / medium / high / xhigh / max，覆盖 pi-ai
+  原生支持的全部思考等级；wire 值按声明透传给后端（DeepSeek 官方认
+  `low/high/max`，OpenAI 系认 `xhigh`——按你的网关后端自选档位）
+- **旧档位自动升级**：模型声明若恰好等于旧的四档默认
+  （`off/low/medium/high`，即本包此前补上的），重启后自动升级为全档位，
+  无需手改文件；手写/自定义的 dict 从不被改动
 - **不改 UI、不改 dsh 本体**：菜单是原生的，包只补配置元数据
-- **不覆盖已有声明**：已写 `reasoningEfforts`（dict 或 `false`）的模型从不被改动
+- **不覆盖已有声明**：已写 `reasoningEfforts`（自定义 dict 或 `false`）的模型从不被改动
 - **退出自由**：某个不支持推理的模型，在 `settings.yaml` 里给它
   `reasoningEfforts: false` 即可恢复无菜单状态
 - 生效路径：宿主改动 → **重启 `dsh web`**（宿主侧启动时加载）

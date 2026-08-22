@@ -4,33 +4,9 @@ DeepSeek Harness Web GUI 插件：**归档会话管理**（查看 · 恢复 · �
 **自定义模型推理等级自动补齐**（让自定义模型像预制模型一样能用原生「推理等级」菜单）+
 **会话活动提示音**（agent 等待输入 / 完成任务时播放提示音）+
 **免密钥 Exa 网络搜索**（无 API key 也能用原生 `web_search`）+
-**思考标签切分**（把泄漏进正文的思考文本折叠回 Think 块）+
 **持久化 bash 卡顿卫士**（minimal 预设的持久终端退化为 ~3s 沉默档后自动重置 shell）。
 
 ## 功能
-
-### 思考标签切分（Thinking-tag splitter）
-
-部分模型提供方（如 `scnet` 的 Anthropic 兼容代理）把模型的思考文本连同字面
-闭合标签（` response` = `<`+`/`+`think`+`>`、`</thinking>`）直接写进 **text 通道**，
-同时声明的 reasoning 块是空的。webui 忠实渲染 text 块 → 思考显示成可见对话、
-Think 区空白。本功能挂在 host 端 `llm/stream` waterfall，在数据源头把流重写：
-
-- **切分**：text 块含代码外的真实闭合标签 → 按**最后一个**标签切分，之前全部进
-  `reasoning` 块（webui 折叠进 Think 区），之后是干净可见 text；支持多标签、
-  `</thinking>`、反引号/代码块保护（代码内的标签不切分）。
-- **空块清除/合并**：上游声明的**空** reasoning 块（`block-start` 后一个
-  `reasoning-delta` 都没有、空文本结束）**不发射** block-start/block-end——
-  空 Think 框不会出现在 UI 里；若紧跟着有内容的 reasoning 块，则并入它（一条消息
-  一个连续 Think 框），否则直接清除。有内容的 reasoning 块**始终保留**、互不合并。
-- **协议安全**：悬空块（上游打开未闭合）在流结束时干净闭合（空块则直接丢弃），保证
-  `llm-invariant` 校验通过、装配正确。
-- **作用域**：只对 `provider === 'scnet'`、非辅助调用（compaction / session-title
-  放行）生效；其余 provider 原样透传。
-
-生效方式：改动在 host half，需**重启 `dsh web`**。重启后本插件随 `dsh web`
-启动自动挂载，全局（所有会话）生效；dsh 升级不覆盖（插件经 `dsh plugin add`
-安装，见下）。
 
 ### 免密钥 Exa 网络搜索（v0.10 新增）
 
@@ -168,7 +144,6 @@ node tests/host.mjs     # 宿主 half 集成测试（真实临时目录 + 模拟
 node tests/reasoning.mjs # 宿主 half 推理等级补齐测试（模拟 settings 服务，验证幂等补齐/不覆盖/监听）
 node tests/web-search-exa.mjs # 免密钥 Exa 搜索 provider 测试（模拟 ctx.web + fetch，验证匿名 MCP/REST/429/abort）
 node tests/stall-guard.mjs # 持久化 bash 卡顿卫士测试（纯决策逻辑 + tools/execute 接线，验证重置/冷却/永不拖住调用）
-node tests/splitter.mjs # 思考标签切分测试（验证切分/空块清除合并/协议安全）
 ```
 
 - 改 client half → 刷新浏览器即可（webserver stat-poll 自动热加载）

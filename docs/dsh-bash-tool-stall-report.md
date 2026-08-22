@@ -316,7 +316,7 @@ node docs/repro-pty-stall.mjs   # 依赖全局安装 dsh 的 node-pty，或设 N
   下一次 `bash` 调用触发工具缓存重置并重新 spawn 新 shell，恢复快路径。
 - **参数**：`STALL_THRESHOLD_MS=2800`、`STALL_STRIKES=3`、`STALL_RESET_COOLDOWN_MS=60000`。
 - **测试**：`tests/stall-guard.mjs`（23 项断言，含纯逻辑 + 接线），全部通过；
-  既有 host/reasoning/splitter/web-search-exa/smoke 测试不受影响。
+  既有 host/reasoning/web-search-exa/smoke 测试不受影响。
 - **生效**：宿主侧为静态 bundle，改动已构建进 `lib/index.js`，需**重启 `dsh web`**
   后加载；重启由用户执行。
 - **已知代价**：重置后下一次 `bash` 调用先报一次错（工具缓存了已死会话 id），随后
